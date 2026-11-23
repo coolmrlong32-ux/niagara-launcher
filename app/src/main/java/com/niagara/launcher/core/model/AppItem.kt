@@ -1,15 +1,17 @@
 package com.niagara.launcher.core.model
 
-import android.graphics.drawable.Drawable
+import androidx.compose.runtime.Immutable
 
 /**
  * Represents an installed Android application accessible from the launcher.
+ * Icons are loaded asynchronously via [com.niagara.launcher.core.data.AppIconCache]
+ * to keep this model immutable and Compose-skippable.
  */
+@Immutable
 data class AppItem(
     val packageName: String,
     val activityName: String,
     val label: String,
-    val icon: Drawable? = null,
     val firstLetter: Char = '#',
     val pinyinInitials: String = "",
     val fullPinyin: String = "",

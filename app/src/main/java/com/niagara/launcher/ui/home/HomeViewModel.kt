@@ -1,6 +1,5 @@
 package com.niagara.launcher.ui.home
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -8,10 +7,12 @@ import com.niagara.launcher.core.data.AppRepository
 import com.niagara.launcher.core.data.PreferencesRepository
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.LauncherPreferences
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -23,30 +24,49 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+
     init {
+        appRepository.startObservingPackages()
         observeData()
     }
 
     private fun observeData() {
         viewModelScope.launch {
             combine(
-                appRepository.appUpdateTrigger,
-                preferencesRepository.launcherPreferencesFlow
-            ) { _, prefs ->
-                val allInstalled = appRepository.loadInstalledApps()
-                processApps(allInstalled, prefs)
-            }.collect { (favorites, visibleApps, grouped, indexMap, prefs) ->
-                _uiState.update { current ->
-                    current.copy(
-                        isLoading = false,
-                        favorites = favorites,
-                        allApps = visibleApps,
-                        appsByLetter = grouped,
-                        letterIndexMap = indexMap,
-                        preferences = prefs
-                    )
+                appRepository.installedAppsFlow,
+                appRepository.isLoaded,
+                preferencesRepository.launcherPreferencesFlow,
+                _searchQuery
+            ) { installedApps, isLoaded, prefs, query ->
+                val processed = processApps(installedApps, prefs)
+                val searchResults = if (query.isBlank()) {
+                    emptyList()
+                } else {
+                    processed.visibleApps.filter { it.matchesQuery(query) }
                 }
+                ObservedState(
+                    isLoading = !isLoaded,
+                    processed = processed,
+                    searchQuery = query,
+                    searchResults = searchResults
+                )
             }
+                .flowOn(Dispatchers.Default)
+                .collect { observed ->
+                    _uiState.update { current ->
+                        current.copy(
+                            isLoading = observed.isLoading,
+                            favorites = observed.processed.favorites,
+                            allApps = observed.processed.visibleApps,
+                            appsByLetter = observed.processed.grouped,
+                            letterIndexMap = observed.processed.indexMap,
+                            searchQuery = observed.searchQuery,
+                            searchResults = observed.searchResults,
+                            preferences = observed.processed.prefs
+                        )
+                    }
+                }
         }
     }
 
@@ -55,6 +75,7 @@ class HomeViewModel(
         prefs: LauncherPreferences
     ): ProcessedAppsResult {
         val appMap = allApps.associateBy { it.key }
+        val favoriteKeySet = prefs.favoriteKeys.toSet()
 
         // Process favorites
         val favorites = prefs.favoriteKeys.mapNotNull { key ->
@@ -64,7 +85,7 @@ class HomeViewModel(
         // Visible apps excluding hidden ones
         val visibleApps = allApps
             .filterNot { prefs.hiddenKeys.contains(it.key) }
-            .map { it.copy(isFavorite = prefs.favoriteKeys.contains(it.key)) }
+            .map { it.copy(isFavorite = favoriteKeySet.contains(it.key)) }
 
         val grouped = visibleApps.groupBy { it.firstLetter }
 
@@ -95,16 +116,21 @@ class HomeViewModel(
         val prefs: LauncherPreferences
     )
 
+    private data class ObservedState(
+        val isLoading: Boolean,
+        val processed: ProcessedAppsResult,
+        val searchQuery: String,
+        val searchResults: List<AppItem>
+    )
+
     fun onSearchQueryChanged(query: String) {
-        val filtered = if (query.isBlank()) {
-            emptyList()
-        } else {
-            _uiState.value.allApps.filter { it.matchesQuery(query) }
-        }
-        _uiState.update { it.copy(searchQuery = query, searchResults = filtered) }
+        _searchQuery.value = query
     }
 
     fun setSearching(isSearching: Boolean) {
+        if (!isSearching) {
+            _searchQuery.value = ""
+        }
         _uiState.update {
             it.copy(
                 isSearching = isSearching,

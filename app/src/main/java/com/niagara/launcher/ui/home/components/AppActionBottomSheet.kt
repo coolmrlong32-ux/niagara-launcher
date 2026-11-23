@@ -65,7 +65,7 @@ fun AppActionBottomSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(bottom = 16.dp)
             ) {
-                AppIcon(drawable = app.icon, modifier = Modifier.size(48.dp))
+                AppIcon(app = app, modifier = Modifier.size(48.dp))
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(

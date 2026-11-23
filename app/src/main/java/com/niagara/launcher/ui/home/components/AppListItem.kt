@@ -1,11 +1,13 @@
 package com.niagara.launcher.ui.home.components
 
-import android.graphics.drawable.Drawable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,16 +19,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
+import com.niagara.launcher.core.data.LocalAppIconCache
 import com.niagara.launcher.core.model.AppItem
 
 /**
@@ -51,8 +58,8 @@ fun AppListItem(
             .padding(horizontal = 24.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // App icon
-        AppIcon(drawable = app.icon, modifier = Modifier.size(42.dp))
+        // App icon loaded asynchronously from AppIconCache
+        AppIcon(app = app, modifier = Modifier.size(42.dp))
 
         Spacer(modifier = Modifier.width(16.dp))
 
@@ -83,26 +90,39 @@ fun AppListItem(
 
 @Composable
 fun AppIcon(
-    drawable: Drawable?,
+    app: AppItem,
     modifier: Modifier = Modifier
 ) {
+    val iconCache = LocalAppIconCache.current
+    val density = LocalDensity.current
+    val targetSizePx = remember(density) { with(density) { 48.dp.roundToPx() } }
+
+    var bitmap by remember(app.key, iconCache) {
+        mutableStateOf(iconCache?.getCached(app.key))
+    }
+
+    LaunchedEffect(app.key, iconCache, targetSizePx) {
+        if (bitmap == null && iconCache != null) {
+            bitmap = iconCache.loadIcon(
+                packageName = app.packageName,
+                activityName = app.activityName,
+                targetSizePx = targetSizePx
+            )
+        }
+    }
+
     Box(
-        modifier = modifier.clip(RoundedCornerShape(10.dp)),
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (bitmap == null) Color.White.copy(alpha = 0.08f) else Color.Transparent),
         contentAlignment = Alignment.Center
     ) {
-        if (drawable != null) {
-            val bitmap = try {
-                drawable.toBitmap(width = 96, height = 96)
-            } catch (_: Exception) {
-                null
-            }
-            if (bitmap != null) {
-                androidx.compose.foundation.Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier.size(42.dp)
-                )
-            }
+        bitmap?.let { loadedBitmap ->
+            Image(
+                bitmap = loadedBitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }

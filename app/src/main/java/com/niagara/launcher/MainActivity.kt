@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
+import com.niagara.launcher.core.data.LocalAppIconCache
 import com.niagara.launcher.core.theme.NiagaraLauncherTheme
 import com.niagara.launcher.ui.home.HomeScreen
 import com.niagara.launcher.ui.home.HomeViewModel
@@ -20,9 +22,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val iconCache = (application as NiagaraApplication).appRepository.iconCache
+
         setContent {
             NiagaraLauncherTheme {
-                HomeScreen(viewModel = viewModel)
+                CompositionLocalProvider(LocalAppIconCache provides iconCache) {
+                    HomeScreen(viewModel = viewModel)
+                }
             }
         }
     }
