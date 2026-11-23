@@ -28,7 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -54,13 +55,15 @@ import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.ui.home.components.AppListItem
 
 /**
- * Full-screen instant search overlay with Pinyin matching and web search fallback.
+ * Full-screen instant search overlay with Pinyin matching, subtle hidden-app discovery,
+ * and web search fallback.
  */
 @Composable
 fun SearchOverlay(
     visible: Boolean,
     query: String,
     results: List<AppItem>,
+    hiddenResults: List<AppItem> = emptyList(),
     onQueryChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onAppClick: (AppItem) -> Unit,
@@ -133,8 +136,9 @@ fun SearchOverlay(
                         ),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = {
-                            if (results.isNotEmpty()) {
-                                onAppClick(results.first())
+                            val topHit = results.firstOrNull() ?: hiddenResults.firstOrNull()
+                            if (topHit != null) {
+                                onAppClick(topHit)
                             } else if (query.isNotBlank()) {
                                 launchWebSearch(context, query)
                             }
@@ -175,9 +179,52 @@ fun SearchOverlay(
                         )
                     }
 
+                    // Subtle hidden app hits at the bottom when query is non-blank
+                    if (query.isNotBlank() && hiddenResults.isNotEmpty()) {
+                        items(items = hiddenResults, key = { "hidden_${it.key}" }) { app ->
+                            Box(modifier = Modifier.alpha(0.68f)) {
+                                AppListItem(
+                                    app = app,
+                                    onClick = {
+                                        keyboardController?.hide()
+                                        onAppClick(app)
+                                    },
+                                    onLongClick = { onAppLongClick(app) }
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color.White.copy(alpha = 0.12f),
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .padding(end = 24.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.VisibilityOff,
+                                            contentDescription = "已隐藏",
+                                            tint = Color.White.copy(alpha = 0.75f),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "已隐藏",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                color = Color.White.copy(alpha = 0.75f),
+                                                fontSize = 10.sp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Web search fallback tile
                     if (query.isNotBlank()) {
-                        item {
+                        item(key = "web_search_fallback") {
                             WebSearchTile(query = query) {
                                 keyboardController?.hide()
                                 launchWebSearch(context, query)
@@ -248,7 +295,6 @@ private fun launchWebSearch(context: android.content.Context, query: String) {
         }
         context.startActivity(intent)
     } catch (_: Exception) {
-        // Fallback to Uri view
         val searchUri = android.net.Uri.parse("https://www.google.com/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}")
         val intent = Intent(Intent.ACTION_VIEW, searchUri).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK

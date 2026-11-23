@@ -27,15 +27,34 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          BUILD_TIME_JST=$(TZ='Asia/Tokyo' date '+%Y-%m-%d %H:%M:%S JST')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          {
+            echo "body<<EOF"
+            echo "自动构建的最新测试版 APK（每次推送代码自动覆盖更新）。"
+            echo ""
+            echo "- **最新构建时间**：\`${BUILD_TIME_JST}\`"
+            echo "- **最新提交版本**：\`${SHORT_SHA}\`"
+            echo "- **本次更新说明**：${COMMIT_MSG}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Debug APK
-          body: 自动构建的最新测试版 APK（每次推送代码自动覆盖更新）。
+          body: ${{ steps.release_notes.outputs.body }}
           prerelease: true
           files: app/build/outputs/apk/debug/app-debug.apk
         env:

@@ -16,13 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,13 +47,14 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Minimalist Niagara Glance widget displaying time, date, battery level, and search button.
+ * Minimalist Niagara Glance widget displaying time, date, battery level, search, and settings button.
  */
 @Composable
 fun GlanceWidget(
     modifier: Modifier = Modifier,
     showBattery: Boolean = true,
-    onSearchClick: () -> Unit
+    onSearchClick: () -> Unit,
+    onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
     var currentTime by remember { mutableStateOf("") }
@@ -64,7 +66,7 @@ fun GlanceWidget(
     val dateFormatter = remember { SimpleDateFormat("M月d日", Locale.getDefault()) }
     val dayOfWeekFormatter = remember { SimpleDateFormat("EEEE", Locale.getDefault()) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(showBattery) {
         while (true) {
             val now = Date()
             currentTime = timeFormatter.format(now)
@@ -108,7 +110,7 @@ fun GlanceWidget(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Date, Battery and Search icon row
+        // Date, Battery and Search/Settings action row
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -116,19 +118,21 @@ fun GlanceWidget(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    try {
-                        val calendarUri = CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build()
-                        context.startActivity(Intent(Intent.ACTION_VIEW, calendarUri).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        })
-                    } catch (_: Exception) {
-                        // Fallback
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        try {
+                            val calendarUri = CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build()
+                            context.startActivity(Intent(Intent.ACTION_VIEW, calendarUri).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            })
+                        } catch (_: Exception) {
+                            // Fallback
+                        }
                     }
-                }
             ) {
                 Icon(
                     imageVector = Icons.Outlined.CalendarToday,
@@ -163,26 +167,49 @@ fun GlanceWidget(
                 }
             }
 
-            // Quick search button
-            Surface(
-                onClick = onSearchClick,
-                shape = RoundedCornerShape(16.dp),
-                color = Color.White.copy(alpha = 0.15f)
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Quick search button
+                Surface(
+                    onClick = onSearchClick,
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.White.copy(alpha = 0.15f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = "搜索",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "搜索",
+                            style = MaterialTheme.typography.labelSmall.copy(color = Color.White)
+                        )
+                    }
+                }
+
+                // Launcher settings & hidden apps trigger
+                Surface(
+                    onClick = onSettingsClick,
+                    shape = CircleShape,
+                    color = Color.White.copy(alpha = 0.12f)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Search,
-                        contentDescription = "Search",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "搜索",
-                        style = MaterialTheme.typography.labelSmall.copy(color = Color.White)
+                        imageVector = Icons.Outlined.Tune,
+                        contentDescription = "启动器设置",
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .padding(6.dp)
+                            .size(16.dp)
                     )
                 }
             }

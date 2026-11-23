@@ -8,14 +8,21 @@ import com.niagara.launcher.core.data.PreferencesRepository
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.LauncherPreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ * ViewModel for Niagara Home screen managing app lists, favorites, hidden apps,
+ * search queries, launcher preferences, and user interactions.
+ */
 class HomeViewModel(
     private val appRepository: AppRepository,
     private val preferencesRepository: PreferencesRepository
@@ -25,6 +32,9 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
+
+    private val _snackbarEvents = MutableSharedFlow<HomeSnackbarEvent>(extraBufferCapacity = 8)
+    val snackbarEvents: SharedFlow<HomeSnackbarEvent> = _snackbarEvents.asSharedFlow()
 
     init {
         appRepository.startObservingPackages()
@@ -45,11 +55,17 @@ class HomeViewModel(
                 } else {
                     processed.visibleApps.filter { it.matchesQuery(query) }
                 }
+                val hiddenSearchResults = if (query.isBlank()) {
+                    emptyList()
+                } else {
+                    processed.hiddenApps.filter { it.matchesQuery(query) }
+                }
                 ObservedState(
                     isLoading = !isLoaded,
                     processed = processed,
                     searchQuery = query,
-                    searchResults = searchResults
+                    searchResults = searchResults,
+                    hiddenSearchResults = hiddenSearchResults
                 )
             }
                 .flowOn(Dispatchers.Default)
@@ -57,12 +73,16 @@ class HomeViewModel(
                     _uiState.update { current ->
                         current.copy(
                             isLoading = observed.isLoading,
+                            listEntries = observed.processed.listBuildResult.entries,
                             favorites = observed.processed.favorites,
                             allApps = observed.processed.visibleApps,
+                            hiddenApps = observed.processed.hiddenApps,
                             appsByLetter = observed.processed.grouped,
-                            letterIndexMap = observed.processed.indexMap,
+                            letterIndexMap = observed.processed.listBuildResult.letterIndexMap,
+                            availableLetters = observed.processed.listBuildResult.availableLetters,
                             searchQuery = observed.searchQuery,
                             searchResults = observed.searchResults,
+                            hiddenSearchResults = observed.hiddenSearchResults,
                             preferences = observed.processed.prefs
                         )
                     }
@@ -77,42 +97,47 @@ class HomeViewModel(
         val appMap = allApps.associateBy { it.key }
         val favoriteKeySet = prefs.favoriteKeys.toSet()
 
-        // Process favorites
+        // Favorites exclude hidden apps so hiding a favorite removes it cleanly from pinned area
         val favorites = prefs.favoriteKeys.mapNotNull { key ->
-            appMap[key]?.copy(isFavorite = true)
+            if (prefs.hiddenKeys.contains(key)) {
+                null
+            } else {
+                appMap[key]?.copy(isFavorite = true, isHidden = false)
+            }
         }
 
         // Visible apps excluding hidden ones
         val visibleApps = allApps
             .filterNot { prefs.hiddenKeys.contains(it.key) }
-            .map { it.copy(isFavorite = favoriteKeySet.contains(it.key)) }
+            .map { it.copy(isFavorite = favoriteKeySet.contains(it.key), isHidden = false) }
+
+        // Hidden apps sorted alphabetically for management sheet & search fallback
+        val hiddenApps = allApps
+            .filter { prefs.hiddenKeys.contains(it.key) }
+            .map { it.copy(isFavorite = favoriteKeySet.contains(it.key), isHidden = true) }
 
         val grouped = visibleApps.groupBy { it.firstLetter }
+        val listBuildResult = HomeListModel.build(
+            favorites = favorites,
+            appsByLetter = grouped
+        )
 
-        // Calculate index offsets for LazyColumn:
-        // Index 0 is Glance Widget
-        // Index 1..favorites.size are favorite items
-        // Followed by letter headers and app items
-        val indexMap = mutableMapOf<Char, Int>()
-        var currentIndex = 1 + favorites.size // After Glance + Favorites
-
-        val letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#".toCharArray()
-        for (letter in letters) {
-            val list = grouped[letter]
-            if (!list.isNullOrEmpty()) {
-                indexMap[letter] = currentIndex
-                currentIndex += 1 + list.size // Header + items
-            }
-        }
-
-        return ProcessedAppsResult(favorites, visibleApps, grouped, indexMap, prefs)
+        return ProcessedAppsResult(
+            favorites = favorites,
+            visibleApps = visibleApps,
+            hiddenApps = hiddenApps,
+            grouped = grouped,
+            listBuildResult = listBuildResult,
+            prefs = prefs
+        )
     }
 
     private data class ProcessedAppsResult(
         val favorites: List<AppItem>,
         val visibleApps: List<AppItem>,
+        val hiddenApps: List<AppItem>,
         val grouped: Map<Char, List<AppItem>>,
-        val indexMap: Map<Char, Int>,
+        val listBuildResult: HomeListBuildResult,
         val prefs: LauncherPreferences
     )
 
@@ -120,7 +145,8 @@ class HomeViewModel(
         val isLoading: Boolean,
         val processed: ProcessedAppsResult,
         val searchQuery: String,
-        val searchResults: List<AppItem>
+        val searchResults: List<AppItem>,
+        val hiddenSearchResults: List<AppItem>
     )
 
     fun onSearchQueryChanged(query: String) {
@@ -134,8 +160,9 @@ class HomeViewModel(
         _uiState.update {
             it.copy(
                 isSearching = isSearching,
-                searchQuery = if (isSearching) it.searchQuery else "",
-                searchResults = if (isSearching) it.searchResults else emptyList()
+                searchQuery = if (!isSearching) "" else it.searchQuery,
+                searchResults = if (!isSearching) emptyList() else it.searchResults,
+                hiddenSearchResults = if (!isSearching) emptyList() else it.hiddenSearchResults
             )
         }
     }
@@ -148,28 +175,76 @@ class HomeViewModel(
         _uiState.update { it.copy(selectedAppForMenu = null) }
     }
 
-    fun toggleFavorite(app: AppItem) {
-        viewModelScope.launch {
-            preferencesRepository.toggleFavorite(app.key)
-        }
+    fun openSettings() {
+        _uiState.update { it.copy(isSettingsSheetVisible = true) }
     }
 
-    fun toggleHidden(app: AppItem) {
-        viewModelScope.launch {
-            preferencesRepository.toggleHidden(app.key)
-        }
+    fun closeSettings() {
+        _uiState.update { it.copy(isSettingsSheetVisible = false) }
     }
 
     fun launchApp(app: AppItem) {
         appRepository.launchApp(app)
     }
 
+    fun toggleFavorite(app: AppItem) {
+        viewModelScope.launch {
+            preferencesRepository.toggleFavorite(app.key)
+        }
+    }
+
+    fun moveFavoriteUp(app: AppItem) {
+        viewModelScope.launch {
+            preferencesRepository.moveFavorite(app.key, -1)
+        }
+    }
+
+    fun moveFavoriteDown(app: AppItem) {
+        viewModelScope.launch {
+            preferencesRepository.moveFavorite(app.key, 1)
+        }
+    }
+
+    fun toggleHidden(app: AppItem) {
+        viewModelScope.launch {
+            val willHide = !app.isHidden
+            preferencesRepository.setHidden(app.key, willHide)
+            if (willHide) {
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.AppHidden(app))
+            }
+        }
+    }
+
+    fun unhideApp(app: AppItem) {
+        viewModelScope.launch {
+            preferencesRepository.setHidden(app.key, false)
+        }
+    }
+
+    fun setRightHanded(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setRightHanded(enabled)
+        }
+    }
+
+    fun setHapticFeedbackEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setHapticFeedbackEnabled(enabled)
+        }
+    }
+
+    fun setShowBatteryInGlance(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowBatteryInGlance(enabled)
+        }
+    }
+
     fun openAppDetails(app: AppItem) {
-        appRepository.openAppDetails(app.packageName)
+        appRepository.openAppDetails(app)
     }
 
     fun uninstallApp(app: AppItem) {
-        appRepository.requestUninstall(app.packageName)
+        appRepository.uninstallApp(app)
     }
 
     class Factory(
@@ -181,4 +256,8 @@ class HomeViewModel(
             return HomeViewModel(appRepository, preferencesRepository) as T
         }
     }
+}
+
+sealed interface HomeSnackbarEvent {
+    data class AppHidden(val app: AppItem) : HomeSnackbarEvent
 }

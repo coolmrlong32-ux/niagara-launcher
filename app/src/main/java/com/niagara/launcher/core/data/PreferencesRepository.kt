@@ -26,7 +26,11 @@ class PreferencesRepository(private val context: Context) {
 
     val launcherPreferencesFlow: Flow<LauncherPreferences> = context.dataStore.data.map { preferences ->
         val favoritesRaw = preferences[PreferencesKeys.FAVORITE_KEYS] ?: ""
-        val favoriteList = if (favoritesRaw.isBlank()) emptyList() else favoritesRaw.split(";")
+        val favoriteList = if (favoritesRaw.isBlank()) {
+            emptyList()
+        } else {
+            favoritesRaw.split(";").filter { it.isNotBlank() }
+        }
         val hiddenSet = preferences[PreferencesKeys.HIDDEN_KEYS] ?: emptySet()
         val isRightHanded = preferences[PreferencesKeys.IS_RIGHT_HANDED] ?: true
         val hapticEnabled = preferences[PreferencesKeys.HAPTIC_FEEDBACK] ?: true
@@ -44,7 +48,11 @@ class PreferencesRepository(private val context: Context) {
     suspend fun toggleFavorite(appKey: String) {
         context.dataStore.edit { preferences ->
             val favoritesRaw = preferences[PreferencesKeys.FAVORITE_KEYS] ?: ""
-            val list = if (favoritesRaw.isBlank()) mutableListOf() else favoritesRaw.split(";").toMutableList()
+            val list = if (favoritesRaw.isBlank()) {
+                mutableListOf()
+            } else {
+                favoritesRaw.split(";").filter { it.isNotBlank() }.toMutableList()
+            }
             if (list.contains(appKey)) {
                 list.remove(appKey)
             } else {
@@ -60,6 +68,25 @@ class PreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun moveFavorite(appKey: String, delta: Int) {
+        if (delta == 0) return
+        context.dataStore.edit { preferences ->
+            val favoritesRaw = preferences[PreferencesKeys.FAVORITE_KEYS] ?: ""
+            val list = if (favoritesRaw.isBlank()) {
+                return@edit
+            } else {
+                favoritesRaw.split(";").filter { it.isNotBlank() }.toMutableList()
+            }
+            val index = list.indexOf(appKey)
+            if (index < 0) return@edit
+            val targetIndex = (index + delta).coerceIn(0, list.lastIndex)
+            if (targetIndex == index) return@edit
+            val item = list.removeAt(index)
+            list.add(targetIndex, item)
+            preferences[PreferencesKeys.FAVORITE_KEYS] = list.joinToString(";")
+        }
+    }
+
     suspend fun toggleHidden(appKey: String) {
         context.dataStore.edit { preferences ->
             val current = preferences[PreferencesKeys.HIDDEN_KEYS] ?: emptySet()
@@ -72,6 +99,17 @@ class PreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun setHidden(appKey: String, hidden: Boolean) {
+        context.dataStore.edit { preferences ->
+            val current = preferences[PreferencesKeys.HIDDEN_KEYS] ?: emptySet()
+            preferences[PreferencesKeys.HIDDEN_KEYS] = if (hidden) {
+                current + appKey
+            } else {
+                current - appKey
+            }
+        }
+    }
+
     suspend fun setRightHanded(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.IS_RIGHT_HANDED] = enabled
@@ -81,6 +119,12 @@ class PreferencesRepository(private val context: Context) {
     suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.HAPTIC_FEEDBACK] = enabled
+        }
+    }
+
+    suspend fun setShowBatteryInGlance(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_BATTERY] = enabled
         }
     }
 }

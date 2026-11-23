@@ -8,18 +8,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -35,14 +38,18 @@ import com.niagara.launcher.core.model.AppItem
 
 /**
  * Modal Bottom Sheet appearing on app item long-press.
- * Offers options to Favorite, Hide, view App Info, or Uninstall.
+ * Offers options to Favorite, Reorder Favorites, Hide/Unhide, view App Info, or Uninstall.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppActionBottomSheet(
     app: AppItem,
+    canMoveFavoriteUp: Boolean = false,
+    canMoveFavoriteDown: Boolean = false,
     onDismissRequest: () -> Unit,
     onToggleFavorite: (AppItem) -> Unit,
+    onMoveFavoriteUp: (AppItem) -> Unit = {},
+    onMoveFavoriteDown: (AppItem) -> Unit = {},
     onToggleHidden: (AppItem) -> Unit,
     onOpenDetails: (AppItem) -> Unit,
     onUninstall: (AppItem) -> Unit
@@ -100,10 +107,34 @@ fun AppActionBottomSheet(
                 }
             )
 
-            // Action: Hide App
+            // Action: Reorder within Favorites
+            if (app.isFavorite && !app.isHidden && (canMoveFavoriteUp || canMoveFavoriteDown)) {
+                if (canMoveFavoriteUp) {
+                    ActionRowItem(
+                        icon = Icons.Outlined.KeyboardArrowUp,
+                        title = "在常用中上移",
+                        onClick = {
+                            onMoveFavoriteUp(app)
+                            onDismissRequest()
+                        }
+                    )
+                }
+                if (canMoveFavoriteDown) {
+                    ActionRowItem(
+                        icon = Icons.Outlined.KeyboardArrowDown,
+                        title = "在常用中下移",
+                        onClick = {
+                            onMoveFavoriteDown(app)
+                            onDismissRequest()
+                        }
+                    )
+                }
+            }
+
+            // Action: Hide / Unhide App
             ActionRowItem(
-                icon = Icons.Outlined.VisibilityOff,
-                title = "隐藏应用",
+                icon = if (app.isHidden) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                title = if (app.isHidden) "取消隐藏" else "隐藏应用",
                 onClick = {
                     onToggleHidden(app)
                     onDismissRequest()
