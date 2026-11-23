@@ -41,8 +41,8 @@ class PinyinEngineTest {
     fun testPolyphonePriorityAndVariants() {
         val musicIndex = PinyinEngine.buildIndex("网易云音乐")
         assertEquals('W', musicIndex.firstLetter)
-        assertEquals("WYYYL", musicIndex.primaryInitials)
-        assertEquals("wangyiyunyinle", musicIndex.primaryFullPinyin)
+        assertEquals("WYYYY", musicIndex.primaryInitials)
+        assertEquals("wangyiyunyinyue", musicIndex.primaryFullPinyin)
         assertTrue(musicIndex.initialVariants.contains("wyyyy"))
         assertTrue(musicIndex.initialVariants.contains("wyyyl"))
         assertTrue(musicIndex.fullPinyinVariants.contains("wangyiyunyinyue"))
@@ -72,11 +72,14 @@ class PinyinEngineTest {
         assertEquals("WC", PinyinEngine.getPinyinInitials("WeChat"))
         assertEquals("wechat", PinyinEngine.getFullPinyin("WeChat"))
 
+        // "QQ" is kept as a single acronym token -> primary initials "QYY" / "QYL", full variants include "qqyy" & "qqyinyue"
         val qqMusic = PinyinEngine.buildIndex("QQ音乐")
         assertEquals('Q', qqMusic.firstLetter)
-        assertTrue(qqMusic.initialVariants.contains("qqyy"))
-        assertTrue(qqMusic.initialVariants.contains("qqyl"))
+        assertEquals("QYY", qqMusic.primaryInitials)
+        assertTrue(qqMusic.initialVariants.contains("qyy"))
+        assertTrue(qqMusic.initialVariants.contains("qyl"))
         assertTrue(qqMusic.fullPinyinVariants.contains("qqyinyue"))
+        assertTrue(qqMusic.fullPinyinVariants.contains("qqyinle"))
     }
 
     @Test
