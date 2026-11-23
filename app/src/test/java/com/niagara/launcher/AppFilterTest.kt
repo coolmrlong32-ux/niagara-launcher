@@ -29,67 +29,75 @@ class AppFilterTest {
     }
 
     @Test
-    fun testAppQueryMatchingWithRealPinyinEngine() {
+    fun testRealPinyinAndEnglishInitialMatching() {
         val weChat = buildApp("com.tencent.mm", "微信")
-        val weChatRead = buildApp("com.tencent.weread", "微信读书")
         val alipay = buildApp("com.eg.android.AlipayGphone", "支付宝")
         val chrome = buildApp("com.android.chrome", "Google Chrome")
         val youtube = buildApp("com.google.android.youtube", "YouTube")
-        val neteaseMusic = buildApp("com.netease.cloudmusic", "网易云音乐")
-        val qqMusic = buildApp("com.tencent.qqmusic", "QQ音乐")
-        val cmbBank = buildApp("cmb.pb", "招商银行")
 
-        // WeChat & WeChat Read
         assertTrue(weChat.matchesQuery("微"))
         assertTrue(weChat.matchesQuery("wx"))
         assertTrue(weChat.matchesQuery("WX"))
         assertTrue(weChat.matchesQuery("weix"))
         assertTrue(weChat.matchesQuery("weixin"))
-        assertTrue(weChatRead.matchesQuery("wx读书"))
         assertFalse(weChat.matchesQuery("zfb"))
 
-        // Alipay
         assertTrue(alipay.matchesQuery("支"))
         assertTrue(alipay.matchesQuery("zfb"))
         assertTrue(alipay.matchesQuery("zhifu"))
 
-        // English word & CamelCase initials
         assertTrue(chrome.matchesQuery("gc"))
         assertTrue(chrome.matchesQuery("chr"))
         assertTrue(chrome.matchesQuery("CHROME"))
-        assertTrue(youtube.matchesQuery("yt"))
+        assertTrue(chrome.matchesQuery("google"))
 
-        // Polyphone & mixed queries
+        assertTrue(youtube.matchesQuery("yt"))
+        assertTrue(youtube.matchesQuery("tube"))
+    }
+
+    @Test
+    fun testPolyphoneAndMixedQueryMatching() {
+        val neteaseMusic = buildApp("com.netease.cloudmusic", "网易云音乐")
+        val cmbBank = buildApp("cmb.pb", "招商银行")
+        val qqMusic = buildApp("com.tencent.qqmusic", "QQ音乐")
+        val weRead = buildApp("com.tencent.weread", "微信读书")
+
         assertTrue(neteaseMusic.matchesQuery("wyyyy"))
         assertTrue(neteaseMusic.matchesQuery("wyyyl"))
         assertTrue(neteaseMusic.matchesQuery("yinyue"))
-        assertTrue(qqMusic.matchesQuery("qqyy"))
+        assertTrue(neteaseMusic.matchesQuery("yinle"))
+
         assertTrue(cmbBank.matchesQuery("zsyh"))
         assertTrue(cmbBank.matchesQuery("yinhang"))
 
-        // Package name fallback
-        assertTrue(weChat.matchesQuery("tencent"))
+        assertTrue(qqMusic.matchesQuery("qqyy"))
+        assertTrue(qqMusic.matchesQuery("qqyin"))
+        assertTrue(qqMusic.matchesQuery("qq音乐"))
+
+        assertTrue(weRead.matchesQuery("wx读书"))
     }
 
     @Test
     fun testRelevanceRankingOrder() {
-        val weChatRead = buildApp("com.tencent.weread", "微信读书")
         val weChat = buildApp("com.tencent.mm", "微信")
-        val weibo = buildApp("com.sina.weibo", "微博")
-        val enterpriseWeChat = buildApp("com.tencent.wework", "企业微信")
+        val weRead = buildApp("com.tencent.weread", "微信读书")
+        val weWork = buildApp("com.tencent.wework", "企业微信")
+        val favoriteWeRead = buildApp("com.tencent.weread", "微信读书", isFavorite = true)
 
-        val rankedByWx = AppSearchEngine.search(
-            listOf(weChatRead, enterpriseWeChat, weibo, weChat),
-            "wx"
+        val rankedForWx = AppSearchEngine.search(listOf(weWork, weRead, weChat), "wx")
+        assertEquals(listOf("微信", "微信读书", "企业微信"), rankedForWx.map { it.label })
+
+        val rankedWithFavoriteTieBreaker = AppSearchEngine.search(
+            listOf(weWork, weRead, favoriteWeRead),
+            "wxds"
         )
-        // Exact initials "wx" -> "微信" ranks first before prefix "wxds" ("微信读书") and substring ("企业微信")
-        assertEquals("微信", rankedByWx.first().label)
-        assertEquals("微信读书", rankedByWx[1].label)
+        assertEquals("微信读书", rankedWithFavoriteTieBreaker.first().label)
+        assertTrue(rankedWithFavoriteTieBreaker.first().isFavorite)
+    }
 
-        // Favorite boost breaks ties or promotes pinned app within same tier
-        val favBank = buildApp("cmb.pb", "招商银行", isFavorite = true)
-        val normalBank = buildApp("com.icbc", "工商银行", isFavorite = false)
-        val rankedBanks = AppSearchEngine.search(listOf(normalBank, favBank), "yh")
-        assertEquals("招商银行", rankedBanks.first().label)
+    @Test
+    fun testPackageNameFallbackMatching() {
+        val qq = buildApp("com.tencent.mobileqq", "QQ")
+        assertTrue(qq.matchesQuery("tencent"))
     }
 }

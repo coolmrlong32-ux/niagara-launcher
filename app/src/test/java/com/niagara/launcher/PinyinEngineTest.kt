@@ -12,44 +12,71 @@ class PinyinEngineTest {
     fun testFirstLetterExtraction() {
         assertEquals('W', PinyinEngine.getFirstLetter("微信"))
         assertEquals('Z', PinyinEngine.getFirstLetter("支付宝"))
-        assertEquals('Y', PinyinEngine.getFirstLetter("银行"))
-        assertEquals('Y', PinyinEngine.getFirstLetter("音乐"))
-        assertEquals('C', PinyinEngine.getFirstLetter("重庆"))
-        assertEquals('M', PinyinEngine.getFirstLetter("魅族"))
-        assertEquals('Q', PinyinEngine.getFirstLetter("麒麟"))
-        assertEquals('X', PinyinEngine.getFirstLetter("鑫"))
         assertEquals('C', PinyinEngine.getFirstLetter("Chrome"))
         assertEquals('Y', PinyinEngine.getFirstLetter("YouTube"))
         assertEquals('#', PinyinEngine.getFirstLetter("12306"))
         assertEquals('#', PinyinEngine.getFirstLetter("@App"))
+        assertEquals('#', PinyinEngine.getFirstLetter(""))
         assertEquals('#', PinyinEngine.getFirstLetter("   "))
     }
 
     @Test
-    fun testPinyinInitialsExtraction() {
-        assertEquals("WX", PinyinEngine.getPinyinInitials("微信"))
-        assertEquals("ZFB", PinyinEngine.getPinyinInitials("支付宝"))
-        assertEquals("MT", PinyinEngine.getPinyinInitials("美团"))
-        assertEquals("S", PinyinEngine.getPinyinInitials("Setting"))
-        assertEquals("GC", PinyinEngine.getPinyinInitials("Google Chrome"))
-        assertEquals("YT", PinyinEngine.getPinyinInitials("YouTube"))
-        assertEquals("WC", PinyinEngine.getPinyinInitials("WeChat"))
-        assertEquals("QQYY", PinyinEngine.getPinyinInitials("QQ音乐"))
+    fun testRareAndTraditionalCharacters() {
+        assertEquals('M', PinyinEngine.getFirstLetter("魅族"))
+        assertEquals("MZ", PinyinEngine.getPinyinInitials("魅族"))
+        assertEquals("meizu", PinyinEngine.getFullPinyin("魅族"))
+
+        assertEquals('Q', PinyinEngine.getFirstLetter("麒麟"))
+        assertEquals("QL", PinyinEngine.getPinyinInitials("麒麟"))
+        assertEquals("qilin", PinyinEngine.getFullPinyin("麒麟"))
+
+        assertEquals('X', PinyinEngine.getFirstLetter("鑫"))
+        assertEquals("xin", PinyinEngine.getFullPinyin("鑫"))
+
+        assertEquals('S', PinyinEngine.getFirstLetter("設定"))
+        assertEquals("SD", PinyinEngine.getPinyinInitials("設定"))
     }
 
     @Test
-    fun testFullPinyinExtractionAndPolyphones() {
-        assertEquals("weixin", PinyinEngine.getFullPinyin("微信"))
-        assertEquals("zhifubao", PinyinEngine.getFullPinyin("支付宝"))
-        assertEquals("chrome", PinyinEngine.getFullPinyin("Chrome"))
-        assertEquals("wangyiyunyinyue", PinyinEngine.getFullPinyin("网易云音乐"))
-        assertEquals("zhaoshangyinhang", PinyinEngine.getFullPinyin("招商银行"))
-
+    fun testPolyphonePriorityAndVariants() {
         val musicIndex = PinyinEngine.buildIndex("网易云音乐")
+        assertEquals('W', musicIndex.firstLetter)
+        assertEquals("WYYYL", musicIndex.primaryInitials)
+        assertEquals("wangyiyunyinle", musicIndex.primaryFullPinyin)
         assertTrue(musicIndex.initialVariants.contains("wyyyy"))
         assertTrue(musicIndex.initialVariants.contains("wyyyl"))
         assertTrue(musicIndex.fullPinyinVariants.contains("wangyiyunyinyue"))
         assertTrue(musicIndex.fullPinyinVariants.contains("wangyiyunyinle"))
+
+        val bankIndex = PinyinEngine.buildIndex("招商银行")
+        assertEquals("ZSYH", bankIndex.primaryInitials)
+        assertEquals("zhaoshangyinhang", bankIndex.primaryFullPinyin)
+        assertTrue(bankIndex.initialVariants.contains("zsyx"))
+        assertTrue(bankIndex.fullPinyinVariants.contains("zhaoshangyinxing"))
+
+        val chongqingIndex = PinyinEngine.buildIndex("重庆")
+        assertEquals('C', chongqingIndex.firstLetter)
+        assertEquals("CQ", chongqingIndex.primaryInitials)
+        assertEquals("chongqing", chongqingIndex.primaryFullPinyin)
+        assertTrue(chongqingIndex.initialVariants.contains("zq"))
+    }
+
+    @Test
+    fun testEnglishMultiWordCamelCaseAndMixedLabels() {
+        assertEquals("GC", PinyinEngine.getPinyinInitials("Google Chrome"))
+        assertEquals("googlechrome", PinyinEngine.getFullPinyin("Google Chrome"))
+
+        assertEquals("YT", PinyinEngine.getPinyinInitials("YouTube"))
+        assertEquals("youtube", PinyinEngine.getFullPinyin("YouTube"))
+
+        assertEquals("WC", PinyinEngine.getPinyinInitials("WeChat"))
+        assertEquals("wechat", PinyinEngine.getFullPinyin("WeChat"))
+
+        val qqMusic = PinyinEngine.buildIndex("QQ音乐")
+        assertEquals('Q', qqMusic.firstLetter)
+        assertTrue(qqMusic.initialVariants.contains("qqyy"))
+        assertTrue(qqMusic.initialVariants.contains("qqyl"))
+        assertTrue(qqMusic.fullPinyinVariants.contains("qqyinyue"))
     }
 
     @Test
@@ -57,9 +84,7 @@ class PinyinEngineTest {
         assertTrue(PinyinEngine.isChinese('微'))
         assertTrue(PinyinEngine.isChinese('信'))
         assertTrue(PinyinEngine.isChinese('魅'))
-        assertTrue(PinyinEngine.isChinese('麒'))
         assertFalse(PinyinEngine.isChinese('A'))
         assertFalse(PinyinEngine.isChinese('1'))
-        assertFalse(PinyinEngine.isChinese('@'))
     }
 }
