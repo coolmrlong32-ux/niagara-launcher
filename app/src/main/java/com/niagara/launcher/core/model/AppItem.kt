@@ -1,6 +1,8 @@
 package com.niagara.launcher.core.model
 
 import androidx.compose.runtime.Immutable
+import com.niagara.launcher.core.pinyin.PinyinIndex
+import com.niagara.launcher.core.search.AppSearchEngine
 
 /**
  * Represents an installed Android application accessible from the launcher.
@@ -15,6 +17,7 @@ data class AppItem(
     val firstLetter: Char = '#',
     val pinyinInitials: String = "",
     val fullPinyin: String = "",
+    val pinyinIndex: PinyinIndex = PinyinIndex(),
     val isFavorite: Boolean = false,
     val isHidden: Boolean = false
 ) {
@@ -24,13 +27,9 @@ data class AppItem(
     val key: String get() = "$packageName/$activityName"
 
     /**
-     * Matches user search query against app title, pinyin initials, or full pinyin.
+     * Matches user search query against app title, pinyin initials, full pinyin, or package name.
      */
     fun matchesQuery(query: String): Boolean {
-        if (query.isBlank()) return true
-        val cleanQuery = query.trim().lowercase()
-        return label.lowercase().contains(cleanQuery) ||
-                pinyinInitials.lowercase().contains(cleanQuery) ||
-                fullPinyin.lowercase().contains(cleanQuery)
+        return AppSearchEngine.scoreMatch(this, query) > 0
     }
 }

@@ -1,131 +1,287 @@
 package com.niagara.launcher.core.pinyin
 
-import java.util.Locale
+import androidx.compose.runtime.Immutable
+import net.sourceforge.pinyin4j.PinyinHelper
+import net.sourceforge.pinyin4j.format.HanyuPinyinCaseType
+import net.sourceforge.pinyin4j.format.HanyuPinyinOutputFormat
+import net.sourceforge.pinyin4j.format.HanyuPinyinToneType
+import net.sourceforge.pinyin4j.format.HanyuPinyinVCharType
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * High-performance lightweight Pinyin engine for Chinese character indexing and search.
- * Supports Pinyin initials extraction, full Pinyin transliteration, and multi-mode fuzzy search.
+ * Structured Pinyin and word-token index for fast, polyphone-aware matching.
+ */
+@Immutable
+data class PinyinIndex(
+    val firstLetter: Char = '#',
+    val primaryInitials: String = "",
+    val primaryFullPinyin: String = "",
+    val initialVariants: List<String> = emptyList(),
+    val fullPinyinVariants: List<String> = emptyList(),
+    val tokenSyllables: List<List<String>> = emptyList()
+)
+
+/**
+ * Full-coverage Pinyin engine backed by pinyin4j with app-domain polyphone priority overrides,
+ * English word/CamelCase tokenization, and per-character concurrent caching.
  */
 object PinyinEngine {
 
-    // Common Chinese GB2312 boundary index mapping table for A-Z
-    private val GB_BOUNDARY_CHARS = intArrayOf(
-        0xB0A1, 0xB0C5, 0xB2C1, 0xB4EE, 0xB6EA, 0xB7A2, 0xB8C1,
-        0xB9FE, 0xBBF7, 0xBFA6, 0xC0AC, 0xC2E8, 0xC4C3, 0xC5B6,
-        0xC5BE, 0xC6DA, 0xC8BB, 0xC8F6, 0xCBFA, 0xCDDA, 0xCEF4,
-        0xD1B9, 0xD4D1
-    )
-
-    private val GB_INITIALS = charArrayOf(
-        'A', 'B', 'C', 'D', 'E', 'F', 'G',
-        'H', 'J', 'K', 'L', 'M', 'N',
-        'O', 'P', 'Q', 'R', 'S', 'T',
-        'W', 'X', 'Y', 'Z'
-    )
-
-    // Lookup dictionary for common everyday Chinese words and tech apps
-    private val COMMON_WORDS_PINYIN = mapOf(
-        "微" to "wei", "信" to "xin", "支" to "zhi", "付" to "fu", "宝" to "bao",
-        "淘" to "tao", "京" to "jing", "东" to "dong", "拼" to "pin", "多" to "duo",
-        "美" to "mei", "团" to "tuan", "快" to "kuai", "手" to "shou", "抖" to "dou",
-        "音" to "yin", "小" to "xiao", "红" to "hong", "书" to "shu", "高" to "gao",
-        "德" to "de", "地" to "di", "图" to "tu", "百" to "bai", "度" to "du",
-        "知" to "zhi", "乎" to "hu", "哔" to "bi", "哩" to "li", "网" to "wang",
-        "易" to "yi", "云" to "yun", "音" to "yin", "乐" to "le", "酷" to "ku",
-        "狗" to "gou", "设" to "she", "置" to "zhi", "相" to "xiang", "机" to "ji",
-        "相" to "xiang", "册" to "ce", "电" to "dian", "话" to "hua", "信" to "xin",
-        "息" to "xi", "日" to "ri", "历" to "li", "时" to "shi", "钟" to "zhong",
-        "计" to "ji", "算" to "suan", "器" to "qi", "浏" to "liu", "览" to "lan",
-        "文" to "wen", "件" to "jian", "天" to "tian", "气" to "qi", "邮" to "you",
-        "箱" to "xiang", "便" to "bian", "签" to "qian", "录" to "lu", "音" to "yin"
-    )
-
-    /**
-     * Returns the capitalized initial letter for the given text (for A-Z grouping).
-     */
-    fun getFirstLetter(text: String): Char {
-        if (text.isBlank()) return '#'
-        val firstChar = text.trim()[0]
-
-        // English / ASCII letter
-        if (firstChar in 'a'..'z') return firstChar.uppercaseChar()
-        if (firstChar in 'A'..'Z') return firstChar
-
-        // Chinese character
-        if (isChinese(firstChar)) {
-            val initial = getChineseInitial(firstChar)
-            if (initial in 'A'..'Z') return initial
-        }
-
-        // Default category for numbers, symbols, etc.
-        return '#'
+    private val outputFormat = HanyuPinyinOutputFormat().apply {
+        caseType = HanyuPinyinCaseType.LOWERCASE
+        toneType = HanyuPinyinToneType.WITHOUT_TONE
+        vCharType = HanyuPinyinVCharType.WITH_V
     }
 
-    /**
-     * Extracts pinyin initials from a string, e.g., "微信" -> "WX", "Settings" -> "S".
-     */
-    fun getPinyinInitials(text: String): String {
-        val sb = StringBuilder()
-        for (ch in text) {
-            when {
-                ch in 'a'..'z' || ch in 'A'..'Z' -> sb.append(ch.uppercaseChar())
-                ch in '0'..'9' -> sb.append(ch)
-                isChinese(ch) -> sb.append(getChineseInitial(ch))
-            }
-        }
-        return sb.toString()
-    }
+    private val charCache = ConcurrentHashMap<Char, List<String>>()
+
+    // Prioritized readings for common polyphones in Chinese app names
+    private val POLYPHONE_PRIORITY: Map<Char, List<String>> = mapOf(
+        '乐' to listOf("yue", "le"),
+        '行' to listOf("hang", "xing"),
+        '重' to listOf("chong", "zhong"),
+        '长' to listOf("chang", "zhang"),
+        '调' to listOf("tiao", "diao"),
+        '单' to listOf("dan", "shan"),
+        '藏' to listOf("cang", "zang"),
+        '厦' to listOf("xia", "sha"),
+        '校' to listOf("xiao", "jiao"),
+        '传' to listOf("chuan", "zhuan"),
+        '率' to listOf("lv", "shuai"),
+        '省' to listOf("sheng", "xing"),
+        '秘' to listOf("mi", "bi"),
+        '宿' to listOf("su", "xiu"),
+        '都' to listOf("du", "dou"),
+        '奇' to listOf("qi", "ji"),
+        '朝' to listOf("chao", "zhao"),
+        '数' to listOf("shu", "shuo"),
+        '角' to listOf("jiao", "jue"),
+        '绿' to listOf("lv", "lu")
+    )
 
     /**
-     * Converts a string into full Pinyin without tone marks.
-     */
-    fun getFullPinyin(text: String): String {
-        val sb = StringBuilder()
-        for (ch in text) {
-            val chStr = ch.toString()
-            if (COMMON_WORDS_PINYIN.containsKey(chStr)) {
-                sb.append(COMMON_WORDS_PINYIN[chStr])
-            } else if (isChinese(ch)) {
-                sb.append(getChineseInitial(ch).lowercaseChar())
-            } else if (ch.isLetterOrDigit()) {
-                sb.append(ch.lowercaseChar())
-            }
-        }
-        return sb.toString()
-    }
-
-    /**
-     * Determines whether the character is a Chinese Han character.
+     * Determines whether the character is a CJK Unified Ideograph.
      */
     fun isChinese(ch: Char): Boolean {
-        return ch in '\u4E00'..'\u9FA5'
+        return ch in '\u4E00'..'\u9FFF'
     }
 
     /**
-     * Converts a single Chinese character to its uppercase initial consonant letter.
+     * Returns all distinct, tone-free lowercase Pinyin readings for a single Chinese character,
+     * ordered with common app-name pronunciations first.
      */
-    private fun getChineseInitial(ch: Char): Char {
-        // Quick dictionary lookup
-        val chStr = ch.toString()
-        if (COMMON_WORDS_PINYIN.containsKey(chStr)) {
-            return COMMON_WORDS_PINYIN[chStr]!![0].uppercaseChar()
-        }
+    fun getCharPinyins(ch: Char): List<String> {
+        if (!isChinese(ch)) return emptyList()
+        return charCache.computeIfAbsent(ch) { target ->
+            val rawReadings = try {
+                PinyinHelper.toHanyuPinyinStringArray(target, outputFormat)
+                    ?.map { it.trim().lowercase() }
+                    ?.filter { it.isNotEmpty() }
+                    ?.distinct()
+                    .orEmpty()
+            } catch (_: Exception) {
+                emptyList()
+            }
 
-        try {
-            val bytes = chStr.toByteArray(charset("GB2312"))
-            if (bytes.size < 2) return '#'
-            val b0 = bytes[0].toInt() and 0xFF
-            val b1 = bytes[1].toInt() and 0xFF
-            val code = (b0 shl 8) + b1
-
-            for (i in GB_BOUNDARY_CHARS.indices.reversed()) {
-                if (code >= GB_BOUNDARY_CHARS[i]) {
-                    return GB_INITIALS[i]
+            val priority = POLYPHONE_PRIORITY[target]
+            when {
+                rawReadings.isEmpty() && !priority.isNullOrEmpty() -> priority
+                rawReadings.isEmpty() -> emptyList()
+                priority.isNullOrEmpty() -> rawReadings
+                else -> {
+                    val ordered = LinkedHashSet<String>()
+                    for (preferred in priority) {
+                        if (rawReadings.contains(preferred) || preferred == "lv") {
+                            ordered.add(preferred)
+                        }
+                    }
+                    ordered.addAll(rawReadings)
+                    ordered.toList()
                 }
             }
-        } catch (_: Exception) {
-            // Fallback
+        }
+    }
+
+    /**
+     * Builds a comprehensive [PinyinIndex] for [text], handling Chinese polyphones,
+     * multi-word English labels ("Google Chrome" -> "gc"), CamelCase ("YouTube" -> "yt"),
+     * and mixed labels ("QQ音乐" -> "qqyy" / "qqyl").
+     */
+    fun buildIndex(text: String): PinyinIndex {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) {
+            return PinyinIndex()
+        }
+
+        val firstLetter = computeFirstLetter(trimmed)
+        val tokenSyllables = tokenize(trimmed)
+        if (tokenSyllables.isEmpty()) {
+            return PinyinIndex(firstLetter = firstLetter)
+        }
+
+        val primaryInitials = buildString {
+            for (variants in tokenSyllables) {
+                val primary = variants.firstOrNull() ?: continue
+                if (primary.isNotEmpty()) {
+                    append(primary[0].uppercaseChar())
+                }
+            }
+        }
+
+        val primaryFullPinyin = buildString {
+            for (variants in tokenSyllables) {
+                val primary = variants.firstOrNull() ?: continue
+                append(primary.lowercase())
+            }
+        }
+
+        // Expand bounded Cartesian combinations for polyphones (capped at 16 variants)
+        val initialVariants = expandVariants(
+            tokenSyllables = tokenSyllables,
+            transform = { syllable -> syllable.firstOrNull()?.lowercaseChar()?.toString().orEmpty() },
+            maxVariants = 16
+        )
+
+        val fullPinyinVariants = expandVariants(
+            tokenSyllables = tokenSyllables,
+            transform = { syllable -> syllable.lowercase() },
+            maxVariants = 16
+        )
+
+        return PinyinIndex(
+            firstLetter = firstLetter,
+            primaryInitials = primaryInitials,
+            primaryFullPinyin = primaryFullPinyin,
+            initialVariants = initialVariants,
+            fullPinyinVariants = fullPinyinVariants,
+            tokenSyllables = tokenSyllables
+        )
+    }
+
+    /**
+     * Returns the capitalized initial letter for A-Z drawer grouping.
+     */
+    fun getFirstLetter(text: String): Char = computeFirstLetter(text.trim())
+
+    /**
+     * Extracts uppercase initials from a label:
+     * - "微信" -> "WX"
+     * - "Google Chrome" -> "GC"
+     * - "YouTube" -> "YT"
+     * - "QQ音乐" -> "QQYY"
+     */
+    fun getPinyinInitials(text: String): String = buildIndex(text).primaryInitials
+
+    /**
+     * Converts a label into concatenated lowercase Pinyin / normalized tokens without spaces.
+     */
+    fun getFullPinyin(text: String): String = buildIndex(text).primaryFullPinyin
+
+    private fun computeFirstLetter(trimmed: String): Char {
+        if (trimmed.isEmpty()) return '#'
+        val firstChar = trimmed[0]
+        if (firstChar in 'a'..'z') return firstChar.uppercaseChar()
+        if (firstChar in 'A'..'Z') return firstChar
+        if (isChinese(firstChar)) {
+            val primary = getCharPinyins(firstChar).firstOrNull()
+            val initial = primary?.firstOrNull()?.uppercaseChar()
+            if (initial != null && initial in 'A'..'Z') {
+                return initial
+            }
         }
         return '#'
     }
+
+    /**
+     * Splits [text] into search tokens:
+     * - Each Chinese character becomes a syllable variant list (e.g. '乐' -> ["yue", "le"]).
+     * - Contiguous ASCII letters split on whitespace/separators and CamelCase boundaries
+     *   (e.g. "Google Chrome" -> ["google"], ["chrome"]; "YouTube" -> ["you"], ["tube"];
+     *    all-caps acronyms like "QQ" stay together as ["qq"]).
+     * - Contiguous digits stay as a single numeric token (e.g. "12306").
+     */
+    private fun tokenize(text: String): List<List<String>> {
+        val tokens = mutableListOf<List<String>>()
+        var i = 0
+        while (i < text.length) {
+            val ch = text[i]
+            when {
+                isChinese(ch) -> {
+                    val readings = getCharPinyins(ch)
+                    if (readings.isNotEmpty()) {
+                        tokens.add(readings)
+                    }
+                    i++
+                }
+                ch.isAsciiLetter() -> {
+                    val start = i
+                    while (i < text.length && text[i].isAsciiLetter()) {
+                        i++
+                    }
+                    val word = text.substring(start, i)
+                    splitCamelCaseWord(word).forEach { subWord ->
+                        tokens.add(listOf(subWord.lowercase()))
+                    }
+                }
+                ch in '0'..'9' -> {
+                    val start = i
+                    while (i < text.length && text[i] in '0'..'9') {
+                        i++
+                    }
+                    tokens.add(listOf(text.substring(start, i)))
+                }
+                else -> {
+                    i++
+                }
+            }
+        }
+        return tokens
+    }
+
+    private fun splitCamelCaseWord(word: String): List<String> {
+        if (word.length <= 1) return listOf(word)
+        // Keep pure uppercase acronyms like "QQ", "WPS", "PDF" intact
+        if (word.all { it in 'A'..'Z' }) {
+            return listOf(word)
+        }
+        val parts = mutableListOf<String>()
+        var partStart = 0
+        for (idx in 1 until word.length) {
+            val prev = word[idx - 1]
+            val curr = word[idx]
+            val nextIsLower = idx + 1 < word.length && word[idx + 1] in 'a'..'z'
+            val isBoundary = (prev in 'a'..'z' && curr in 'A'..'Z') ||
+                (prev in 'A'..'Z' && curr in 'A'..'Z' && nextIsLower)
+            if (isBoundary) {
+                parts.add(word.substring(partStart, idx))
+                partStart = idx
+            }
+        }
+        parts.add(word.substring(partStart))
+        return parts
+    }
+
+    private fun expandVariants(
+        tokenSyllables: List<List<String>>,
+        transform: (String) -> String,
+        maxVariants: Int
+    ): List<String> {
+        var current = listOf("")
+        for (syllableOptions in tokenSyllables) {
+            val pieces = syllableOptions.map(transform).filter { it.isNotEmpty() }.distinct()
+            if (pieces.isEmpty()) continue
+            val next = LinkedHashSet<String>()
+            for (prefix in current) {
+                for (piece in pieces) {
+                    next.add(prefix + piece)
+                    if (next.size >= maxVariants) break
+                }
+                if (next.size >= maxVariants) break
+            }
+            current = next.toList()
+        }
+        return current.filter { it.isNotEmpty() }.distinct()
+    }
+
+    private fun Char.isAsciiLetter(): Boolean = (this in 'a'..'z') || (this in 'A'..'Z')
 }

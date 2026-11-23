@@ -7,6 +7,7 @@ import com.niagara.launcher.core.data.AppRepository
 import com.niagara.launcher.core.data.PreferencesRepository
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.LauncherPreferences
+import com.niagara.launcher.core.search.AppSearchEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,12 +54,12 @@ class HomeViewModel(
                 val searchResults = if (query.isBlank()) {
                     emptyList()
                 } else {
-                    processed.visibleApps.filter { it.matchesQuery(query) }
+                    AppSearchEngine.search(processed.visibleApps, query)
                 }
                 val hiddenSearchResults = if (query.isBlank()) {
                     emptyList()
                 } else {
-                    processed.hiddenApps.filter { it.matchesQuery(query) }
+                    AppSearchEngine.search(processed.hiddenApps, query)
                 }
                 ObservedState(
                     isLoading = !isLoaded,

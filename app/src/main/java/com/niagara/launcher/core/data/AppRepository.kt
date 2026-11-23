@@ -201,44 +201,55 @@ class AppRepository(private val context: Context) {
         if (packageName == context.packageName) return null
 
         val label = resolveInfo.loadLabel(packageManager).toString()
-        val firstLetter = PinyinEngine.getFirstLetter(label)
-        val pinyinInitials = PinyinEngine.getPinyinInitials(label)
-        val fullPinyin = PinyinEngine.getFullPinyin(label)
+        val pinyinIndex = PinyinEngine.buildIndex(label)
 
         return AppItem(
             packageName = packageName,
             activityName = activityName,
             label = label,
-            firstLetter = firstLetter,
-            pinyinInitials = pinyinInitials,
-            fullPinyin = fullPinyin
+            firstLetter = pinyinIndex.firstLetter,
+            pinyinInitials = pinyinIndex.primaryInitials,
+            fullPinyin = pinyinIndex.primaryFullPinyin,
+            pinyinIndex = pinyinIndex
         )
     }
 
     /**
-     * Launches the specified application.
+     * Launches the target application safely.
      */
     fun launchApp(app: AppItem): Boolean {
         return try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
+            val componentName = ComponentName(app.packageName, app.activityName)
+            val launchIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_LAUNCHER)
-                component = ComponentName(app.packageName, app.activityName)
+                component = componentName
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
             }
-            context.startActivity(intent)
+            context.startActivity(launchIntent)
             true
         } catch (_: Exception) {
-            false
+            try {
+                val fallbackIntent = packageManager.getLaunchIntentForPackage(app.packageName)
+                if (fallbackIntent != null) {
+                    fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(fallbackIntent)
+                    true
+                } else {
+                    false
+                }
+            } catch (_: Exception) {
+                false
+            }
         }
     }
 
     /**
-     * Opens system app details page in Settings.
+     * Opens system app details settings page.
      */
-    fun openAppDetails(packageName: String) {
+    fun openAppDetails(app: AppItem) {
         try {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", packageName, null)
+                data = Uri.fromParts("package", app.packageName, null)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
@@ -251,12 +262,12 @@ class AppRepository(private val context: Context) {
     }
 
     /**
-     * Triggers the system uninstall dialogue for the given package.
+     * Requests system uninstallation of the application.
      */
-    fun requestUninstall(packageName: String) {
+    fun uninstallApp(app: AppItem) {
         try {
             val intent = Intent(Intent.ACTION_DELETE).apply {
-                data = Uri.fromParts("package", packageName, null)
+                data = Uri.fromParts("package", app.packageName, null)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
