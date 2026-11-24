@@ -1,16 +1,19 @@
 name: Build and Release Debug APK
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: build-and-release-apk
+  cancel-in-progress: true
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,18 +23,21 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: false
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest
+        run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Generate Release Notes
         id: release_notes
@@ -41,7 +47,7 @@ jobs:
           COMMIT_MSG=$(git log -1 --pretty=%s)
           {
             echo "body<<EOF"
-            echo "自动构建的最新测试版 APK（每次推送代码自动覆盖更新）。"
+            echo "自动构建的最新测试版 APK（按需手动触发免费构建，自动覆盖更新）。"
             echo ""
             echo "- **最新构建时间**：\`${BUILD_TIME_JST}\`"
             echo "- **最新提交版本**：\`${SHORT_SHA}\`"
