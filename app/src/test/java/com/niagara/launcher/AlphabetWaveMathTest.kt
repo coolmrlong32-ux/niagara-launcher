@@ -106,4 +106,93 @@ class AlphabetWaveMathTest {
             AlphabetWaveMath.classifyEdgeGesture(dx = 16f, dy = 16f, lockSlopPx = 14f)
         )
     }
+
+    @Test
+    fun testWaveTransformRestingPeakAndSymmetricFanOut() {
+        // Resting state (waveFactor = 0): zero translation, neutral or highlighted resting scale
+        val resting = AlphabetWaveMath.calculateWaveTransform(
+            letterCenterY = 200f,
+            touchY = 200f,
+            sigmaPx = 40f,
+            maxDisplacementX = 44f,
+            maxSpreadY = 10f,
+            waveFactor = 0f,
+            isRightHanded = true,
+            baseAlpha = 0.68f,
+            isHighlighted = false
+        )
+        assertEquals(0f, resting.translationX, 0.001f)
+        assertEquals(0f, resting.translationY, 0.001f)
+        assertEquals(1.0f, resting.scale, 0.001f)
+
+        val restingHighlighted = AlphabetWaveMath.calculateWaveTransform(
+            letterCenterY = 200f,
+            touchY = 200f,
+            sigmaPx = 40f,
+            maxDisplacementX = 44f,
+            maxSpreadY = 10f,
+            waveFactor = 0f,
+            isRightHanded = true,
+            baseAlpha = 1.0f,
+            isHighlighted = true
+        )
+        assertEquals(1.18f, restingHighlighted.scale, 0.001f)
+
+        // Peak active state at touchY: expands outward and scales to 1.85x
+        val peakRight = AlphabetWaveMath.calculateWaveTransform(
+            letterCenterY = 200f,
+            touchY = 200f,
+            sigmaPx = 40f,
+            maxDisplacementX = 44f,
+            maxSpreadY = 10f,
+            waveFactor = 1f,
+            isRightHanded = true,
+            baseAlpha = 0.68f,
+            isHighlighted = false
+        )
+        assertEquals(-44f, peakRight.translationX, 0.001f)
+        assertEquals(0f, peakRight.translationY, 0.001f)
+        assertEquals(1.85f, peakRight.scale, 0.001f)
+        assertEquals(1.0f, peakRight.alpha, 0.001f)
+
+        val peakLeft = AlphabetWaveMath.calculateWaveTransform(
+            letterCenterY = 200f,
+            touchY = 200f,
+            sigmaPx = 40f,
+            maxDisplacementX = 44f,
+            maxSpreadY = 10f,
+            waveFactor = 1f,
+            isRightHanded = false,
+            baseAlpha = 0.68f,
+            isHighlighted = false
+        )
+        assertEquals(44f, peakLeft.translationX, 0.001f)
+
+        // Neighboring letters fan out symmetrically above and below touchY
+        val above = AlphabetWaveMath.calculateWaveTransform(
+            letterCenterY = 170f,
+            touchY = 200f,
+            sigmaPx = 40f,
+            maxDisplacementX = 44f,
+            maxSpreadY = 10f,
+            waveFactor = 1f,
+            isRightHanded = true,
+            baseAlpha = 0.68f,
+            isHighlighted = false
+        )
+        val below = AlphabetWaveMath.calculateWaveTransform(
+            letterCenterY = 230f,
+            touchY = 200f,
+            sigmaPx = 40f,
+            maxDisplacementX = 44f,
+            maxSpreadY = 10f,
+            waveFactor = 1f,
+            isRightHanded = true,
+            baseAlpha = 0.68f,
+            isHighlighted = false
+        )
+        assertTrue(above.translationY < 0f)
+        assertTrue(below.translationY > 0f)
+        assertEquals(-above.translationY, below.translationY, 0.001f)
+    }
 }
