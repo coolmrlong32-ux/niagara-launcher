@@ -365,6 +365,18 @@ class HomeViewModel(
         }
     }
 
+    fun reorderFavorites(orderedVisibleKeys: List<String>) {
+        viewModelScope.launch {
+            preferencesRepository.reorderFavorites(orderedVisibleKeys)
+        }
+    }
+
+    fun reorderDesktopApps(orderedVisibleKeys: List<String>) {
+        viewModelScope.launch {
+            preferencesRepository.reorderDesktopApps(orderedVisibleKeys)
+        }
+    }
+
     fun toggleHidden(app: AppItem) {
         viewModelScope.launch {
             val willHide = !app.isHidden

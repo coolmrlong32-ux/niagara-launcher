@@ -67,10 +67,52 @@ object PreferencesKeyCodec {
         if (index < 0) return current
         val targetIndex = (index + delta).coerceIn(0, current.lastIndex)
         if (targetIndex == index) return current
+        return reorder(current, index, targetIndex)
+    }
+
+    fun reorder(current: List<String>, fromIndex: Int, toIndex: Int): List<String> {
+        if (current.size <= 1) return current
+        if (fromIndex !in current.indices || toIndex !in current.indices || fromIndex == toIndex) {
+            return current
+        }
         val mutable = current.toMutableList()
-        val item = mutable.removeAt(index)
-        mutable.add(targetIndex, item)
+        val item = mutable.removeAt(fromIndex)
+        mutable.add(toIndex, item)
         return mutable
+    }
+
+    /**
+     * Applies a reordered list of visible app keys onto [storedKeys] while preserving
+     * any hidden/non-visible keys stored in preferences.
+     */
+    fun applyVisibleOrder(storedKeys: List<String>, reorderedVisibleKeys: List<String>): List<String> {
+        val normalizedVisible = reorderedVisibleKeys.asSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+        if (normalizedVisible.isEmpty()) return storedKeys
+
+        val visibleSet = normalizedVisible.toSet()
+        val result = ArrayList<String>(maxOf(storedKeys.size, normalizedVisible.size))
+        var visibleCursor = 0
+
+        for (stored in storedKeys) {
+            if (stored in visibleSet) {
+                if (visibleCursor < normalizedVisible.size) {
+                    result.add(normalizedVisible[visibleCursor++])
+                }
+            } else {
+                result.add(stored)
+            }
+        }
+        while (visibleCursor < normalizedVisible.size) {
+            val next = normalizedVisible[visibleCursor++]
+            if (!result.contains(next)) {
+                result.add(next)
+            }
+        }
+        return result.distinct()
     }
 }
 
@@ -173,6 +215,17 @@ class PreferencesRepository internal constructor(
         }
     }
 
+    suspend fun reorderFavorites(orderedVisibleKeys: List<String>) {
+        if (orderedVisibleKeys.size <= 1) return
+        dataStore.edit { preferences ->
+            val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.FAVORITE_KEYS])
+            val updated = PreferencesKeyCodec.applyVisibleOrder(current, orderedVisibleKeys)
+            if (updated != current) {
+                preferences[PreferencesKeys.FAVORITE_KEYS] = PreferencesKeyCodec.encode(updated)
+            }
+        }
+    }
+
     suspend fun toggleDesktopApp(appKey: String): Boolean {
         var succeeded = false
         dataStore.edit { preferences ->
@@ -241,6 +294,19 @@ class PreferencesRepository internal constructor(
         dataStore.edit { preferences ->
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.DESKTOP_APP_KEYS])
             val updated = PreferencesKeyCodec.move(current, appKey, delta)
+            if (updated != current) {
+                preferences[PreferencesKeys.DESKTOP_APP_KEYS] = PreferencesKeyCodec.encode(updated)
+            }
+        }
+    }
+
+    suspend fun reorderDesktopApps(orderedVisibleKeys: List<String>) {
+        if (orderedVisibleKeys.size <= 1) return
+        dataStore.edit { preferences ->
+            val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.DESKTOP_APP_KEYS])
+                .take(LauncherPreferences.MAX_DESKTOP_APPS_SUPPORTED)
+            val updated = PreferencesKeyCodec.applyVisibleOrder(current, orderedVisibleKeys)
+                .take(LauncherPreferences.MAX_DESKTOP_APPS_SUPPORTED)
             if (updated != current) {
                 preferences[PreferencesKeys.DESKTOP_APP_KEYS] = PreferencesKeyCodec.encode(updated)
             }

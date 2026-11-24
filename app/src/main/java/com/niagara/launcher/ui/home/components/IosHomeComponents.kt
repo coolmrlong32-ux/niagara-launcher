@@ -1,18 +1,23 @@
 package com.niagara.launcher.ui.home.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,8 +44,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -53,19 +64,25 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.niagara.launcher.core.data.LocalIconAppearance
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.DesktopLayoutMath
+import com.niagara.launcher.core.model.GridReorderMath
 import com.niagara.launcher.core.model.IconAppearance
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
+import com.niagara.launcher.core.theme.DragElevationHalo
 import com.niagara.launcher.core.theme.IconShadowAmbient
 import com.niagara.launcher.core.theme.IconShadowSpot
 import com.niagara.launcher.core.theme.IconSpecularRim
@@ -80,6 +97,10 @@ import com.niagara.launcher.core.theme.IosRemoveBadgeBg
 import com.niagara.launcher.core.theme.IosRemoveBadgeIcon
 import com.niagara.launcher.core.theme.IosRoundedCardSquircleShape
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * Restrained translucent glass pill surface with a subtle 0.6dp specular rim border.
@@ -194,7 +215,7 @@ fun IosFrostedGlassCard(
 
 /**
  * Single iOS home screen app icon tile with configurable contour, size, label visibility,
- * crisp micro-specular rim, and edit-mode jiggle with remove badge.
+ * crisp micro-specular rim, drag-lift state, and edit-mode jiggle with remove badge.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -203,9 +224,10 @@ fun IosAppIconTile(
     index: Int,
     isEditMode: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     onRemoveClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isDragged: Boolean = false,
     iconSizeDp: Float = LauncherPreferences.DEFAULT_ICON_SIZE_DP,
     gridColumns: Int = LauncherPreferences.DESKTOP_GRID_COLUMNS,
     showAppLabels: Boolean = true,
@@ -216,9 +238,20 @@ fun IosAppIconTile(
     val iconShape = remember(iconAppearance.iconStyle) { resolveIconShape(iconAppearance.iconStyle) }
     val applyFrameChrome = iconAppearance.iconPackPackage == null && iconAppearance.iconStyle != IconStyle.ADAPTIVE
 
+    val dragScale by animateFloatAsState(
+        targetValue = if (isDragged) 1.12f else 1f,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMedium),
+        label = "dragScale_${app.key}"
+    )
+    val iconShadowDp by animateDpAsState(
+        targetValue = if (isDragged) 18.dp else 7.dp,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium),
+        label = "dragShadow_${app.key}"
+    )
+
     val jiggleAngle: Float
     val jiggleOffsetY: Float
-    if (isEditMode) {
+    if (isEditMode && !isDragged) {
         val infiniteTransition = rememberInfiniteTransition(label = "jiggle_$index")
         val direction = if (index % 2 == 0) 1f else -1f
         val durationMs = 240 + (index % 4) * 14
@@ -247,26 +280,40 @@ fun IosAppIconTile(
         jiggleOffsetY = 0f
     }
 
+    val clickModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = {
+                if (!isEditMode && !isDragged) {
+                    onClick()
+                }
+            },
+            onLongClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLongClick()
+            }
+        )
+    } else {
+        Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            enabled = !isEditMode && !isDragged,
+            onClick = onClick
+        )
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .graphicsLayer {
                 rotationZ = jiggleAngle
                 translationY = jiggleOffsetY
+                scaleX = dragScale
+                scaleY = dragScale
+                alpha = if (isDragged) 0.96f else 1f
             }
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {
-                    if (!isEditMode) {
-                        onClick()
-                    }
-                },
-                onLongClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongClick()
-                }
-            )
+            .then(clickModifier)
             .padding(vertical = 2.dp)
     ) {
         BoxWithConstraints(
@@ -289,16 +336,23 @@ fun IosAppIconTile(
                         if (applyFrameChrome) {
                             Modifier
                                 .shadow(
-                                    elevation = 7.dp,
+                                    elevation = iconShadowDp,
                                     shape = iconShape,
                                     ambientColor = IconShadowAmbient,
                                     spotColor = IconShadowSpot
                                 )
                                 .border(
-                                    width = 0.5.dp,
-                                    color = IconSpecularRim,
+                                    width = if (isDragged) 1.dp else 0.5.dp,
+                                    color = if (isDragged) DragElevationHalo else IconSpecularRim,
                                     shape = iconShape
                                 )
+                        } else if (isDragged) {
+                            Modifier.shadow(
+                                elevation = iconShadowDp,
+                                shape = iconShape,
+                                ambientColor = IconShadowAmbient,
+                                spotColor = IconShadowSpot
+                            )
                         } else {
                             Modifier
                         }
@@ -312,7 +366,7 @@ fun IosAppIconTile(
                     modifier = iconModifier
                 )
 
-                if (isEditMode) {
+                if (isEditMode && !isDragged) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -464,7 +518,369 @@ fun IosAddIconSlot(
 }
 
 /**
- * Top Frosted Glass Favorites Card on the iOS Home Page with configurable column grid.
+ * Free-drag reorderable iOS app grid with:
+ * - Long-press pickup with lift scale & elevated shadow
+ * - Smooth spring sibling displacement as the dragged icon crosses slots
+ * - Subtle frosted landing target indicator
+ * - Spring drop settle on release & persistent order commit
+ */
+@Composable
+fun ReorderableIosAppGrid(
+    apps: List<AppItem>,
+    columns: Int,
+    isEditMode: Boolean,
+    showAddSlot: Boolean,
+    addSlotLabel: String,
+    horizontalSpacing: Dp,
+    verticalSpacing: Dp,
+    iconSizeDp: Float,
+    showAppLabels: Boolean,
+    iconAppearance: IconAppearance,
+    onLaunchApp: (AppItem) -> Unit,
+    onEnterEditMode: () -> Unit,
+    onRemoveApp: (AppItem) -> Unit,
+    onAddSlotClick: () -> Unit,
+    onReorderCommit: (List<String>) -> Unit,
+    onDraggingChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
+    val slotShape = remember(iconAppearance.iconStyle) {
+        if (iconAppearance.iconStyle == IconStyle.ADAPTIVE) {
+            RoundedCornerShape(14.dp)
+        } else {
+            resolveIconShape(iconAppearance.iconStyle)
+        }
+    }
+
+    var workingApps by remember { mutableStateOf(apps) }
+    var draggingKey by remember { mutableStateOf<String?>(null) }
+    var dragDelta by remember { mutableStateOf(Offset.Zero) }
+    var pendingCommittedKeys by remember { mutableStateOf<List<String>?>(null) }
+    val dropStartOffsets = remember { mutableStateMapOf<String, Offset>() }
+
+    // Keep working order synchronized with DataStore state without post-drop snapback flicker
+    LaunchedEffect(apps, draggingKey, pendingCommittedKeys) {
+        if (draggingKey == null) {
+            val externalKeys = apps.map { it.key }
+            val pending = pendingCommittedKeys
+            if (pending == null || externalKeys == pending) {
+                workingApps = apps
+                pendingCommittedKeys = null
+            }
+        }
+    }
+
+    // Safety timeout in case a commit was dropped or normalized externally
+    LaunchedEffect(pendingCommittedKeys) {
+        if (pendingCommittedKeys != null) {
+            delay(400)
+            pendingCommittedKeys = null
+            if (draggingKey == null) {
+                workingApps = apps
+            }
+        }
+    }
+
+    val totalSlots = workingApps.size + if (showAddSlot) 1 else 0
+    if (totalSlots == 0) return
+
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val hSpacePx = with(density) { horizontalSpacing.toPx() }
+        val vSpacePx = with(density) { verticalSpacing.toPx() }
+        val maxWidthPx = with(density) { maxWidth.toPx() }
+        val cellWidthPx = ((maxWidthPx - (columns - 1) * hSpacePx) / columns).coerceAtLeast(1f)
+        val cellWidthDp = with(density) { cellWidthPx.toDp() }
+
+        val effectiveIconDp = DesktopLayoutMath.resolveIconSizeDp(
+            requestedDp = iconSizeDp,
+            availableCellWidthDp = cellWidthDp.value
+        ).dp
+        val cellHeightDp = effectiveIconDp + 10.dp + if (showAppLabels) 22.dp else 0.dp
+        val cellHeightPx = with(density) { cellHeightDp.toPx() }
+        val gridHeightPx = GridReorderMath.calculateGridHeightPx(
+            itemCount = totalSlots,
+            columns = columns,
+            cellHeightPx = cellHeightPx,
+            verticalSpacingPx = vSpacePx
+        )
+        val gridHeightDp = with(density) { gridHeightPx.toDp() }
+
+        val latestWorkingApps by rememberUpdatedState(workingApps)
+        val latestExternalApps by rememberUpdatedState(apps)
+        val latestColumns by rememberUpdatedState(columns)
+        val latestIsEditMode by rememberUpdatedState(isEditMode)
+        val latestCellWidthPx by rememberUpdatedState(cellWidthPx)
+        val latestCellHeightPx by rememberUpdatedState(cellHeightPx)
+        val latestHSpacePx by rememberUpdatedState(hSpacePx)
+        val latestVSpacePx by rememberUpdatedState(vSpacePx)
+        val latestOnEnterEditMode by rememberUpdatedState(onEnterEditMode)
+        val latestOnReorderCommit by rememberUpdatedState(onReorderCommit)
+        val latestOnDraggingChanged by rememberUpdatedState(onDraggingChanged)
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(gridHeightDp)
+        ) {
+            // Subtle frosted placeholder indicating the target drop slot underneath the lifted icon
+            val draggedIndex = draggingKey?.let { key ->
+                workingApps.indexOfFirst { it.key == key }
+            }?.takeIf { it >= 0 }
+
+            if (draggedIndex != null) {
+                val targetSlot = GridReorderMath.indexToCellOrigin(
+                    index = draggedIndex,
+                    columns = columns,
+                    cellWidthPx = cellWidthPx,
+                    cellHeightPx = cellHeightPx,
+                    horizontalSpacingPx = hSpacePx,
+                    verticalSpacingPx = vSpacePx
+                )
+                val ghostX by animateFloatAsState(
+                    targetValue = targetSlot.x,
+                    animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+                    label = "ghostSlotX"
+                )
+                val ghostY by animateFloatAsState(
+                    targetValue = targetSlot.y,
+                    animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+                    label = "ghostSlotY"
+                )
+
+                Box(
+                    contentAlignment = Alignment.TopCenter,
+                    modifier = Modifier
+                        .offset { IntOffset(ghostX.roundToInt(), ghostY.roundToInt()) }
+                        .width(cellWidthDp)
+                        .height(cellHeightDp)
+                        .padding(top = 5.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(effectiveIconDp)
+                            .clip(slotShape)
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .border(0.7.dp, Color.White.copy(alpha = 0.24f), slotShape)
+                    )
+                }
+            }
+
+            // Render every app icon keyed by app.key so slot swaps animate smoothly with springs
+            workingApps.forEachIndexed { index, app ->
+                key(app.key) {
+                    val targetOrigin = GridReorderMath.indexToCellOrigin(
+                        index = index,
+                        columns = columns,
+                        cellWidthPx = cellWidthPx,
+                        cellHeightPx = cellHeightPx,
+                        horizontalSpacingPx = hSpacePx,
+                        verticalSpacingPx = vSpacePx
+                    )
+                    val isDragged = draggingKey == app.key
+                    val animX = remember(app.key) { Animatable(targetOrigin.x) }
+                    val animY = remember(app.key) { Animatable(targetOrigin.y) }
+
+                    LaunchedEffect(targetOrigin.x, targetOrigin.y, isDragged) {
+                        if (!isDragged) {
+                            val dropStart = dropStartOffsets.remove(app.key)
+                            if (dropStart != null) {
+                                animX.snapTo(dropStart.x)
+                                animY.snapTo(dropStart.y)
+                            }
+                            val settleSpec = spring<Float>(
+                                dampingRatio = 0.80f,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                            coroutineScope {
+                                launch { animX.animateTo(targetOrigin.x, settleSpec) }
+                                launch { animY.animateTo(targetOrigin.y, settleSpec) }
+                            }
+                        }
+                    }
+
+                    val visualX = if (isDragged) targetOrigin.x + dragDelta.x else animX.value
+                    val visualY = if (isDragged) targetOrigin.y + dragDelta.y else animY.value
+
+                    Box(
+                        modifier = Modifier
+                            .zIndex(if (isDragged) 10f else 0f)
+                            .offset { IntOffset(visualX.roundToInt(), visualY.roundToInt()) }
+                            .width(cellWidthDp)
+                            .height(cellHeightDp)
+                            .pointerInput(app.key) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        draggingKey = app.key
+                                        dragDelta = Offset.Zero
+                                        latestOnDraggingChanged(true)
+                                        if (!latestIsEditMode) {
+                                            latestOnEnterEditMode()
+                                        }
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragDelta += dragAmount
+
+                                        val currentList = latestWorkingApps
+                                        val currentIdx = currentList.indexOfFirst { it.key == app.key }
+                                        if (currentIdx >= 0 && currentList.size > 1) {
+                                            val currentOrigin = GridReorderMath.indexToCellOrigin(
+                                                index = currentIdx,
+                                                columns = latestColumns,
+                                                cellWidthPx = latestCellWidthPx,
+                                                cellHeightPx = latestCellHeightPx,
+                                                horizontalSpacingPx = latestHSpacePx,
+                                                verticalSpacingPx = latestVSpacePx
+                                            )
+                                            val centerX = currentOrigin.x + dragDelta.x + latestCellWidthPx / 2f
+                                            val centerY = currentOrigin.y + dragDelta.y + latestCellHeightPx / 2f
+
+                                            val targetIdx = GridReorderMath.pointToTargetIndex(
+                                                centerX = centerX,
+                                                centerY = centerY,
+                                                columns = latestColumns,
+                                                itemCount = currentList.size,
+                                                cellWidthPx = latestCellWidthPx,
+                                                cellHeightPx = latestCellHeightPx,
+                                                horizontalSpacingPx = latestHSpacePx,
+                                                verticalSpacingPx = latestVSpacePx,
+                                                currentIndex = currentIdx
+                                            )
+
+                                            if (targetIdx != currentIdx) {
+                                                val nextOrigin = GridReorderMath.indexToCellOrigin(
+                                                    index = targetIdx,
+                                                    columns = latestColumns,
+                                                    cellWidthPx = latestCellWidthPx,
+                                                    cellHeightPx = latestCellHeightPx,
+                                                    horizontalSpacingPx = latestHSpacePx,
+                                                    verticalSpacingPx = latestVSpacePx
+                                                )
+                                                // Compensate slot origin jump so icon remains glued to user's finger
+                                                dragDelta = Offset(
+                                                    x = dragDelta.x + (currentOrigin.x - nextOrigin.x),
+                                                    y = dragDelta.y + (currentOrigin.y - nextOrigin.y)
+                                                )
+                                                workingApps = GridReorderMath.reorder(
+                                                    items = currentList,
+                                                    fromIndex = currentIdx,
+                                                    toIndex = targetIdx
+                                                )
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            }
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        val finalList = latestWorkingApps
+                                        val finalIdx = finalList.indexOfFirst { it.key == app.key }
+                                        if (finalIdx >= 0) {
+                                            val finalOrigin = GridReorderMath.indexToCellOrigin(
+                                                index = finalIdx,
+                                                columns = latestColumns,
+                                                cellWidthPx = latestCellWidthPx,
+                                                cellHeightPx = latestCellHeightPx,
+                                                horizontalSpacingPx = latestHSpacePx,
+                                                verticalSpacingPx = latestVSpacePx
+                                            )
+                                            dropStartOffsets[app.key] = Offset(
+                                                x = finalOrigin.x + dragDelta.x,
+                                                y = finalOrigin.y + dragDelta.y
+                                            )
+                                        }
+                                        val committedKeys = finalList.map { it.key }
+                                        val changed = committedKeys != latestExternalApps.map { it.key }
+                                        draggingKey = null
+                                        dragDelta = Offset.Zero
+                                        latestOnDraggingChanged(false)
+                                        if (changed) {
+                                            pendingCommittedKeys = committedKeys
+                                            latestOnReorderCommit(committedKeys)
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        val finalList = latestWorkingApps
+                                        val finalIdx = finalList.indexOfFirst { it.key == app.key }
+                                        if (finalIdx >= 0) {
+                                            val finalOrigin = GridReorderMath.indexToCellOrigin(
+                                                index = finalIdx,
+                                                columns = latestColumns,
+                                                cellWidthPx = latestCellWidthPx,
+                                                cellHeightPx = latestCellHeightPx,
+                                                horizontalSpacingPx = latestHSpacePx,
+                                                verticalSpacingPx = latestVSpacePx
+                                            )
+                                            dropStartOffsets[app.key] = Offset(
+                                                x = finalOrigin.x + dragDelta.x,
+                                                y = finalOrigin.y + dragDelta.y
+                                            )
+                                        }
+                                        val committedKeys = finalList.map { it.key }
+                                        val changed = committedKeys != latestExternalApps.map { it.key }
+                                        draggingKey = null
+                                        dragDelta = Offset.Zero
+                                        latestOnDraggingChanged(false)
+                                        if (changed) {
+                                            pendingCommittedKeys = committedKeys
+                                            latestOnReorderCommit(committedKeys)
+                                        }
+                                    }
+                                )
+                            }
+                    ) {
+                        IosAppIconTile(
+                            app = app,
+                            index = index,
+                            isEditMode = isEditMode,
+                            isDragged = isDragged,
+                            onClick = { onLaunchApp(app) },
+                            onLongClick = null,
+                            onRemoveClick = { onRemoveApp(app) },
+                            iconSizeDp = iconSizeDp,
+                            gridColumns = columns,
+                            showAppLabels = showAppLabels,
+                            iconAppearance = iconAppearance,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            // Optional trailing "+" slot in edit mode
+            if (showAddSlot) {
+                val addOrigin = GridReorderMath.indexToCellOrigin(
+                    index = workingApps.size,
+                    columns = columns,
+                    cellWidthPx = cellWidthPx,
+                    cellHeightPx = cellHeightPx,
+                    horizontalSpacingPx = hSpacePx,
+                    verticalSpacingPx = vSpacePx
+                )
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(addOrigin.x.roundToInt(), addOrigin.y.roundToInt()) }
+                        .width(cellWidthDp)
+                        .height(cellHeightDp)
+                ) {
+                    IosAddIconSlot(
+                        label = addSlotLabel,
+                        onClick = onAddSlotClick,
+                        iconSizeDp = iconSizeDp,
+                        gridColumns = columns,
+                        showAppLabels = showAppLabels,
+                        iconStyle = iconAppearance.iconStyle,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Top Frosted Glass Favorites Card on the iOS Home Page with free drag-and-drop reordering.
  */
 @Composable
 fun IosFavoritesCard(
@@ -474,6 +890,8 @@ fun IosFavoritesCard(
     onEnterEditMode: () -> Unit,
     onRemoveFavorite: (AppItem) -> Unit,
     onOpenFavoritesPicker: () -> Unit,
+    onReorderFavorites: (List<String>) -> Unit = {},
+    onDraggingChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     gridColumns: Int = LauncherPreferences.FAVORITES_GRID_COLUMNS,
     iconSizeDp: Float = LauncherPreferences.DEFAULT_ICON_SIZE_DP,
@@ -502,7 +920,7 @@ fun IosFavoritesCard(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "常用应用",
+                text = if (isEditMode && favorites.size > 1) "常用应用 · 拖动排序" else "常用应用",
                 style = MaterialTheme.typography.labelSmall.copy(
                     color = visuals.textSecondary,
                     fontSize = 12.5.sp,
@@ -579,55 +997,30 @@ fun IosFavoritesCard(
                 }
             }
         } else {
-            val slotCount = if (isEditMode) favorites.size + 1 else favorites.size
-            val rows = (slotCount + columns - 1) / columns
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (rowIndex in 0 until rows) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
-                    ) {
-                        for (colIndex in 0 until columns) {
-                            val index = rowIndex * columns + colIndex
-                            if (index < favorites.size) {
-                                val app = favorites[index]
-                                IosAppIconTile(
-                                    app = app,
-                                    index = index,
-                                    isEditMode = isEditMode,
-                                    onClick = { onLaunchApp(app) },
-                                    onLongClick = { onEnterEditMode() },
-                                    onRemoveClick = { onRemoveFavorite(app) },
-                                    iconSizeDp = iconSizeDp,
-                                    gridColumns = columns,
-                                    showAppLabels = showAppLabels,
-                                    iconAppearance = iconAppearance,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            } else if (isEditMode && index == favorites.size) {
-                                IosAddIconSlot(
-                                    label = "添加",
-                                    onClick = onOpenFavoritesPicker,
-                                    iconSizeDp = iconSizeDp,
-                                    gridColumns = columns,
-                                    showAppLabels = showAppLabels,
-                                    iconStyle = iconAppearance.iconStyle,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            } else {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
-            }
+            ReorderableIosAppGrid(
+                apps = favorites,
+                columns = columns,
+                isEditMode = isEditMode,
+                showAddSlot = isEditMode,
+                addSlotLabel = "添加",
+                horizontalSpacing = horizontalSpacing,
+                verticalSpacing = 12.dp,
+                iconSizeDp = iconSizeDp,
+                showAppLabels = showAppLabels,
+                iconAppearance = iconAppearance,
+                onLaunchApp = onLaunchApp,
+                onEnterEditMode = onEnterEditMode,
+                onRemoveApp = onRemoveFavorite,
+                onAddSlotClick = onOpenFavoritesPicker,
+                onReorderCommit = onReorderFavorites,
+                onDraggingChanged = onDraggingChanged
+            )
         }
     }
 }
 
 /**
- * 4x6 or 5x6 iOS Desktop App Grid with customizable icons, labels, and edit mode jiggle.
+ * 4x6 or 5x6 iOS Desktop App Grid with free long-press drag-and-drop reordering.
  */
 @Composable
 fun IosDesktopGrid(
@@ -638,6 +1031,8 @@ fun IosDesktopGrid(
     onOpenDesktopMenu: () -> Unit,
     onRemoveDesktopApp: (AppItem) -> Unit,
     onOpenDesktopPicker: () -> Unit,
+    onReorderDesktopApps: (List<String>) -> Unit = {},
+    onDraggingChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     gridColumns: Int = LauncherPreferences.DESKTOP_GRID_COLUMNS,
     maxDesktopApps: Int = LauncherPreferences.MAX_DESKTOP_APPS,
@@ -678,7 +1073,7 @@ fun IosDesktopGrid(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "点击添加桌面应用，或长按桌面空白处打开菜单",
+                    text = "点击添加桌面应用，长按图标可自由拖动排序",
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = visuals.textTertiary
@@ -690,53 +1085,25 @@ fun IosDesktopGrid(
     }
 
     val showAddSlot = isEditMode && visibleDesktopApps.size < maxDesktopApps
-    val totalSlots = visibleDesktopApps.size + if (showAddSlot) 1 else 0
-    val rows = ((totalSlots + columns - 1) / columns)
-        .coerceAtMost(LauncherPreferences.DESKTOP_GRID_ROWS)
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        for (rowIndex in 0 until rows) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
-            ) {
-                for (colIndex in 0 until columns) {
-                    val index = rowIndex * columns + colIndex
-                    if (index < visibleDesktopApps.size) {
-                        val app = visibleDesktopApps[index]
-                        IosAppIconTile(
-                            app = app,
-                            index = index,
-                            isEditMode = isEditMode,
-                            onClick = { onLaunchApp(app) },
-                            onLongClick = onEnterEditMode,
-                            onRemoveClick = { onRemoveDesktopApp(app) },
-                            iconSizeDp = iconSizeDp,
-                            gridColumns = columns,
-                            showAppLabels = showAppLabels,
-                            iconAppearance = iconAppearance,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else if (showAddSlot && index == visibleDesktopApps.size) {
-                        IosAddIconSlot(
-                            label = "添加",
-                            onClick = onOpenDesktopPicker,
-                            iconSizeDp = iconSizeDp,
-                            gridColumns = columns,
-                            showAppLabels = showAppLabels,
-                            iconStyle = iconAppearance.iconStyle,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-    }
+    ReorderableIosAppGrid(
+        apps = visibleDesktopApps,
+        columns = columns,
+        isEditMode = isEditMode,
+        showAddSlot = showAddSlot,
+        addSlotLabel = "添加",
+        horizontalSpacing = horizontalSpacing,
+        verticalSpacing = 16.dp,
+        iconSizeDp = iconSizeDp,
+        showAppLabels = showAppLabels,
+        iconAppearance = iconAppearance,
+        onLaunchApp = onLaunchApp,
+        onEnterEditMode = onEnterEditMode,
+        onRemoveApp = onRemoveDesktopApp,
+        onAddSlotClick = onOpenDesktopPicker,
+        onReorderCommit = onReorderDesktopApps,
+        onDraggingChanged = onDraggingChanged,
+        modifier = modifier
+    )
 }
 
 /**

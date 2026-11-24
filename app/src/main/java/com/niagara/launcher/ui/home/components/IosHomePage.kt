@@ -81,6 +81,9 @@ fun IosHomePage(
     onOpenDesktopSettings: () -> Unit,
     onRemoveFavorite: (AppItem) -> Unit,
     onRemoveDesktopApp: (AppItem) -> Unit,
+    onReorderFavorites: (List<String>) -> Unit,
+    onReorderDesktopApps: (List<String>) -> Unit,
+    onDraggingChanged: (Boolean) -> Unit,
     onOpenFavoritesPicker: () -> Unit,
     onOpenDesktopPicker: () -> Unit,
     onSearchClick: () -> Unit,
@@ -88,6 +91,12 @@ fun IosHomePage(
 ) {
     val haptic = LocalHapticFeedback.current
     val scrollState = rememberScrollState()
+    var isGridDragging by remember { mutableStateOf(false) }
+
+    val handleDraggingChanged: (Boolean) -> Unit = { dragging ->
+        isGridDragging = dragging
+        onDraggingChanged(dragging)
+    }
 
     Box(
         modifier = modifier
@@ -101,7 +110,7 @@ fun IosHomePage(
                     }
                 },
                 onLongClick = {
-                    if (!isEditMode) {
+                    if (!isEditMode && !isGridDragging) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onOpenDesktopMenu()
                     }
@@ -113,7 +122,7 @@ fun IosHomePage(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .verticalScroll(scrollState)
+                .verticalScroll(scrollState, enabled = !isGridDragging)
                 .padding(horizontal = 16.dp)
                 .padding(top = 14.dp, bottom = 76.dp)
         ) {
@@ -147,6 +156,8 @@ fun IosHomePage(
                         onEnterEditMode = onEnterEditMode,
                         onRemoveFavorite = onRemoveFavorite,
                         onOpenFavoritesPicker = onOpenFavoritesPicker,
+                        onReorderFavorites = onReorderFavorites,
+                        onDraggingChanged = handleDraggingChanged,
                         gridColumns = preferences.desktopGridColumns,
                         iconSizeDp = preferences.desktopIconSizeDp,
                         showAppLabels = preferences.showAppLabels,
@@ -165,6 +176,8 @@ fun IosHomePage(
                 onOpenDesktopMenu = onOpenDesktopMenu,
                 onRemoveDesktopApp = onRemoveDesktopApp,
                 onOpenDesktopPicker = onOpenDesktopPicker,
+                onReorderDesktopApps = onReorderDesktopApps,
+                onDraggingChanged = handleDraggingChanged,
                 gridColumns = preferences.desktopGridColumns,
                 maxDesktopApps = preferences.maxDesktopApps,
                 iconSizeDp = preferences.desktopIconSizeDp,
@@ -213,7 +226,7 @@ private fun IosEditModeHeader(
         }
 
         Text(
-            text = "编辑桌面 ($desktopCount/$maxDesktopCount)",
+            text = "拖动排序 ($desktopCount/$maxDesktopCount)",
             style = MaterialTheme.typography.labelSmall.copy(
                 color = visuals.textSecondary,
                 fontSize = 12.sp,

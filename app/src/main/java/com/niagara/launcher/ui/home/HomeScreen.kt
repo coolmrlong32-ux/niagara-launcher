@@ -83,6 +83,7 @@ fun HomeScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var leftEdgeFocusedLetter by remember { mutableStateOf<Char?>(null) }
+    var isHomeIconDragging by remember { mutableStateOf(false) }
 
     // Exit desktop edit mode automatically when swiping away from page 0
     LaunchedEffect(pagerState.currentPage) {
@@ -189,7 +190,8 @@ fun HomeScreen(
                     state = pagerState,
                     userScrollEnabled = !uiState.isSearching &&
                         !uiState.isDesktopSettingsVisible &&
-                        !uiState.isIconPickerVisible,
+                        !uiState.isIconPickerVisible &&
+                        !isHomeIconDragging,
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
                     when (page) {
@@ -206,6 +208,9 @@ fun HomeScreen(
                                 onOpenDesktopSettings = { viewModel.openDesktopSettings() },
                                 onRemoveFavorite = { viewModel.removeFavorite(it) },
                                 onRemoveDesktopApp = { viewModel.removeDesktopApp(it) },
+                                onReorderFavorites = { viewModel.reorderFavorites(it) },
+                                onReorderDesktopApps = { viewModel.reorderDesktopApps(it) },
+                                onDraggingChanged = { isHomeIconDragging = it },
                                 onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
                                 onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
                                 onSearchClick = { viewModel.setSearching(true) }
