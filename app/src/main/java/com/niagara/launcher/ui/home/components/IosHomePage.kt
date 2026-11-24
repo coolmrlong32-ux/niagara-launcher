@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
 import android.provider.AlarmClock
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -62,7 +67,7 @@ import java.util.Locale
 
 /**
  * Independent iOS-style Home page featuring a compact header, Frosted Glass Favorites Card,
- * and 4x6 Squircle Desktop App Grid.
+ * and configurable 4x6 / 5x6 Desktop App Grid.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -70,16 +75,17 @@ fun IosHomePage(
     favorites: List<AppItem>,
     desktopApps: List<AppItem>,
     isEditMode: Boolean,
-    showBattery: Boolean,
+    preferences: LauncherPreferences,
     onLaunchApp: (AppItem) -> Unit,
     onEnterEditMode: () -> Unit,
     onExitEditMode: () -> Unit,
+    onOpenDesktopMenu: () -> Unit,
+    onOpenDesktopSettings: () -> Unit,
     onRemoveFavorite: (AppItem) -> Unit,
     onRemoveDesktopApp: (AppItem) -> Unit,
     onOpenFavoritesPicker: () -> Unit,
     onOpenDesktopPicker: () -> Unit,
     onSearchClick: () -> Unit,
-    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
@@ -99,7 +105,7 @@ fun IosHomePage(
                 onLongClick = {
                     if (!isEditMode) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onEnterEditMode()
+                        onOpenDesktopMenu()
                     }
                 }
             )
@@ -116,38 +122,56 @@ fun IosHomePage(
             if (isEditMode) {
                 IosEditModeHeader(
                     desktopCount = desktopApps.size,
-                    maxDesktopCount = LauncherPreferences.MAX_DESKTOP_APPS,
+                    maxDesktopCount = preferences.maxDesktopApps,
                     onAddClick = onOpenDesktopPicker,
                     onDoneClick = onExitEditMode
                 )
             } else {
                 IosNormalHeader(
-                    showBattery = showBattery,
+                    showBattery = preferences.showBatteryInGlance,
                     onSearchClick = onSearchClick,
-                    onSettingsClick = onSettingsClick
+                    onSettingsClick = onOpenDesktopSettings
                 )
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            IosFavoritesCard(
-                favorites = favorites,
-                isEditMode = isEditMode,
-                onLaunchApp = onLaunchApp,
-                onEnterEditMode = onEnterEditMode,
-                onRemoveFavorite = onRemoveFavorite,
-                onOpenFavoritesPicker = onOpenFavoritesPicker
-            )
+            AnimatedVisibility(
+                visible = preferences.showFavoritesBar,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    IosFavoritesCard(
+                        favorites = favorites,
+                        isEditMode = isEditMode,
+                        onLaunchApp = onLaunchApp,
+                        onEnterEditMode = onEnterEditMode,
+                        onRemoveFavorite = onRemoveFavorite,
+                        onOpenFavoritesPicker = onOpenFavoritesPicker,
+                        gridColumns = preferences.desktopGridColumns,
+                        iconSizeDp = preferences.desktopIconSizeDp,
+                        showAppLabels = preferences.showAppLabels,
+                        iconAppearance = preferences.iconAppearance
+                    )
 
-            Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
+                }
+            }
 
             IosDesktopGrid(
                 desktopApps = desktopApps,
                 isEditMode = isEditMode,
                 onLaunchApp = onLaunchApp,
                 onEnterEditMode = onEnterEditMode,
+                onOpenDesktopMenu = onOpenDesktopMenu,
                 onRemoveDesktopApp = onRemoveDesktopApp,
-                onOpenDesktopPicker = onOpenDesktopPicker
+                onOpenDesktopPicker = onOpenDesktopPicker,
+                gridColumns = preferences.desktopGridColumns,
+                maxDesktopApps = preferences.maxDesktopApps,
+                iconSizeDp = preferences.desktopIconSizeDp,
+                showAppLabels = preferences.showAppLabels,
+                iconAppearance = preferences.iconAppearance
             )
         }
     }

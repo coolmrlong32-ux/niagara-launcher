@@ -5,9 +5,12 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -71,7 +74,11 @@ object PreferencesKeyCodec {
     }
 }
 
-class PreferencesRepository(private val context: Context) {
+class PreferencesRepository internal constructor(
+    private val dataStore: DataStore<Preferences>
+) {
+
+    constructor(context: Context) : this(context.dataStore)
 
     private object PreferencesKeys {
         val FAVORITE_KEYS = stringPreferencesKey("favorite_app_keys")
@@ -80,16 +87,34 @@ class PreferencesRepository(private val context: Context) {
         val IS_RIGHT_HANDED = booleanPreferencesKey("is_right_handed")
         val HAPTIC_FEEDBACK = booleanPreferencesKey("haptic_feedback_enabled")
         val SHOW_BATTERY = booleanPreferencesKey("show_battery_in_glance")
+        val DESKTOP_ICON_SIZE_DP = floatPreferencesKey("desktop_icon_size_dp")
+        val DESKTOP_GRID_COLUMNS = intPreferencesKey("desktop_grid_columns")
+        val SHOW_APP_LABELS = booleanPreferencesKey("show_app_labels")
+        val SHOW_FAVORITES_BAR = booleanPreferencesKey("show_favorites_bar")
+        val ICON_STYLE = stringPreferencesKey("icon_style")
+        val ICON_PACK_PACKAGE = stringPreferencesKey("icon_pack_package")
     }
 
-    val launcherPreferencesFlow: Flow<LauncherPreferences> = context.dataStore.data.map { preferences ->
+    val launcherPreferencesFlow: Flow<LauncherPreferences> = dataStore.data.map { preferences ->
         val favoriteList = PreferencesKeyCodec.decode(preferences[PreferencesKeys.FAVORITE_KEYS])
         val desktopList = PreferencesKeyCodec.decode(preferences[PreferencesKeys.DESKTOP_APP_KEYS])
-            .take(LauncherPreferences.MAX_DESKTOP_APPS)
+            .take(LauncherPreferences.MAX_DESKTOP_APPS_SUPPORTED)
         val hiddenSet = preferences[PreferencesKeys.HIDDEN_KEYS] ?: emptySet()
         val isRightHanded = preferences[PreferencesKeys.IS_RIGHT_HANDED] ?: true
         val hapticEnabled = preferences[PreferencesKeys.HAPTIC_FEEDBACK] ?: true
         val showBattery = preferences[PreferencesKeys.SHOW_BATTERY] ?: true
+        val desktopIconSizeDp = LauncherPreferences.clampIconSizeDp(
+            preferences[PreferencesKeys.DESKTOP_ICON_SIZE_DP] ?: LauncherPreferences.DEFAULT_ICON_SIZE_DP
+        )
+        val desktopGridColumns = LauncherPreferences.normalizeGridColumns(
+            preferences[PreferencesKeys.DESKTOP_GRID_COLUMNS] ?: LauncherPreferences.DESKTOP_GRID_COLUMNS
+        )
+        val showAppLabels = preferences[PreferencesKeys.SHOW_APP_LABELS] ?: true
+        val showFavoritesBar = preferences[PreferencesKeys.SHOW_FAVORITES_BAR] ?: true
+        val iconStyle = IconStyle.fromStorageKey(preferences[PreferencesKeys.ICON_STYLE])
+        val iconPackPackage = preferences[PreferencesKeys.ICON_PACK_PACKAGE]
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
 
         LauncherPreferences(
             favoriteKeys = favoriteList,
@@ -97,12 +122,18 @@ class PreferencesRepository(private val context: Context) {
             hiddenKeys = hiddenSet,
             isRightHanded = isRightHanded,
             hapticFeedbackEnabled = hapticEnabled,
-            showBatteryInGlance = showBattery
+            showBatteryInGlance = showBattery,
+            desktopIconSizeDp = desktopIconSizeDp,
+            desktopGridColumns = desktopGridColumns,
+            showAppLabels = showAppLabels,
+            showFavoritesBar = showFavoritesBar,
+            iconStyle = iconStyle,
+            iconPackPackage = iconPackPackage
         )
     }
 
     suspend fun toggleFavorite(appKey: String) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.FAVORITE_KEYS])
             val (updated, _) = PreferencesKeyCodec.toggle(current, appKey)
             preferences[PreferencesKeys.FAVORITE_KEYS] = PreferencesKeyCodec.encode(updated)
@@ -110,7 +141,7 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun addFavorite(appKey: String) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.FAVORITE_KEYS])
             val (updated, _) = PreferencesKeyCodec.add(current, appKey)
             preferences[PreferencesKeys.FAVORITE_KEYS] = PreferencesKeyCodec.encode(updated)
@@ -118,7 +149,7 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun removeFavorite(appKey: String) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.FAVORITE_KEYS])
             val updated = PreferencesKeyCodec.remove(current, appKey)
             preferences[PreferencesKeys.FAVORITE_KEYS] = PreferencesKeyCodec.encode(updated)
@@ -126,14 +157,14 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun setFavorites(favoriteKeys: List<String>) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferencesKeys.FAVORITE_KEYS] = PreferencesKeyCodec.encode(favoriteKeys)
         }
     }
 
     suspend fun moveFavorite(appKey: String, delta: Int) {
         if (delta == 0) return
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.FAVORITE_KEYS])
             val updated = PreferencesKeyCodec.move(current, appKey, delta)
             if (updated != current) {
@@ -144,13 +175,17 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun toggleDesktopApp(appKey: String): Boolean {
         var succeeded = false
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
+            val columns = LauncherPreferences.normalizeGridColumns(
+                preferences[PreferencesKeys.DESKTOP_GRID_COLUMNS] ?: LauncherPreferences.DESKTOP_GRID_COLUMNS
+            )
+            val maxCapacity = columns * LauncherPreferences.DESKTOP_GRID_ROWS
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.DESKTOP_APP_KEYS])
-                .take(LauncherPreferences.MAX_DESKTOP_APPS)
+                .take(LauncherPreferences.MAX_DESKTOP_APPS_SUPPORTED)
             val (updated, applied) = PreferencesKeyCodec.toggle(
                 current = current,
                 key = appKey,
-                maxSize = LauncherPreferences.MAX_DESKTOP_APPS
+                maxSize = maxCapacity
             )
             succeeded = applied
             if (applied) {
@@ -162,13 +197,17 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun addDesktopApp(appKey: String): Boolean {
         var succeeded = false
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
+            val columns = LauncherPreferences.normalizeGridColumns(
+                preferences[PreferencesKeys.DESKTOP_GRID_COLUMNS] ?: LauncherPreferences.DESKTOP_GRID_COLUMNS
+            )
+            val maxCapacity = columns * LauncherPreferences.DESKTOP_GRID_ROWS
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.DESKTOP_APP_KEYS])
-                .take(LauncherPreferences.MAX_DESKTOP_APPS)
+                .take(LauncherPreferences.MAX_DESKTOP_APPS_SUPPORTED)
             val (updated, applied) = PreferencesKeyCodec.add(
                 current = current,
                 key = appKey,
-                maxSize = LauncherPreferences.MAX_DESKTOP_APPS
+                maxSize = maxCapacity
             )
             succeeded = applied
             if (applied) {
@@ -179,7 +218,7 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun removeDesktopApp(appKey: String) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.DESKTOP_APP_KEYS])
             val updated = PreferencesKeyCodec.remove(current, appKey)
             preferences[PreferencesKeys.DESKTOP_APP_KEYS] = PreferencesKeyCodec.encode(updated)
@@ -187,15 +226,19 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun setDesktopApps(keys: List<String>) {
-        context.dataStore.edit { preferences ->
-            val capped = keys.distinct().take(LauncherPreferences.MAX_DESKTOP_APPS)
+        dataStore.edit { preferences ->
+            val columns = LauncherPreferences.normalizeGridColumns(
+                preferences[PreferencesKeys.DESKTOP_GRID_COLUMNS] ?: LauncherPreferences.DESKTOP_GRID_COLUMNS
+            )
+            val maxCapacity = columns * LauncherPreferences.DESKTOP_GRID_ROWS
+            val capped = keys.distinct().take(maxCapacity)
             preferences[PreferencesKeys.DESKTOP_APP_KEYS] = PreferencesKeyCodec.encode(capped)
         }
     }
 
     suspend fun moveDesktopApp(appKey: String, delta: Int) {
         if (delta == 0) return
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = PreferencesKeyCodec.decode(preferences[PreferencesKeys.DESKTOP_APP_KEYS])
             val updated = PreferencesKeyCodec.move(current, appKey, delta)
             if (updated != current) {
@@ -205,7 +248,7 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun toggleHidden(appKey: String) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = preferences[PreferencesKeys.HIDDEN_KEYS] ?: emptySet()
             val newSet = if (current.contains(appKey)) {
                 current - appKey
@@ -217,7 +260,7 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun setHidden(appKey: String, hidden: Boolean) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = preferences[PreferencesKeys.HIDDEN_KEYS] ?: emptySet()
             preferences[PreferencesKeys.HIDDEN_KEYS] = if (hidden) {
                 current + appKey
@@ -228,20 +271,61 @@ class PreferencesRepository(private val context: Context) {
     }
 
     suspend fun setRightHanded(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferencesKeys.IS_RIGHT_HANDED] = enabled
         }
     }
 
     suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferencesKeys.HAPTIC_FEEDBACK] = enabled
         }
     }
 
     suspend fun setShowBatteryInGlance(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_BATTERY] = enabled
+        }
+    }
+
+    suspend fun setDesktopIconSizeDp(sizeDp: Float) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DESKTOP_ICON_SIZE_DP] = LauncherPreferences.clampIconSizeDp(sizeDp)
+        }
+    }
+
+    suspend fun setDesktopGridColumns(columns: Int) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DESKTOP_GRID_COLUMNS] = LauncherPreferences.normalizeGridColumns(columns)
+        }
+    }
+
+    suspend fun setShowAppLabels(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_APP_LABELS] = enabled
+        }
+    }
+
+    suspend fun setShowFavoritesBar(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_FAVORITES_BAR] = enabled
+        }
+    }
+
+    suspend fun setIconStyle(style: IconStyle) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.ICON_STYLE] = style.storageKey
+        }
+    }
+
+    suspend fun setIconPackPackage(packageName: String?) {
+        dataStore.edit { preferences ->
+            val normalized = packageName?.trim()?.takeIf { it.isNotEmpty() }
+            if (normalized == null) {
+                preferences.remove(PreferencesKeys.ICON_PACK_PACKAGE)
+            } else {
+                preferences[PreferencesKeys.ICON_PACK_PACKAGE] = normalized
+            }
         }
     }
 }

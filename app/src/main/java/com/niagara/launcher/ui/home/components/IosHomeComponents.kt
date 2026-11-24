@@ -16,6 +16,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -58,7 +59,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.niagara.launcher.core.data.LocalIconAppearance
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.model.DesktopLayoutMath
+import com.niagara.launcher.core.model.IconAppearance
+import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.theme.IosDotActive
 import com.niagara.launcher.core.theme.IosDotInactive
@@ -145,8 +150,8 @@ fun IosFrostedGlassCard(
 }
 
 /**
- * Single iOS home screen app icon tile with continuous-curvature squircle shape,
- * shadowed white label, and jiggle edit animation with remove badge.
+ * Single iOS home screen app icon tile with configurable contour, size, label visibility,
+ * and jiggle edit animation with remove badge.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -157,10 +162,15 @@ fun IosAppIconTile(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onRemoveClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    iconSizeDp: Float = LauncherPreferences.DEFAULT_ICON_SIZE_DP,
+    gridColumns: Int = LauncherPreferences.DESKTOP_GRID_COLUMNS,
+    showAppLabels: Boolean = true,
+    iconAppearance: IconAppearance = LocalIconAppearance.current
 ) {
     val haptic = LocalHapticFeedback.current
-    val squircleShape = remember { IosSquircleShape() }
+    val iconShape = remember(iconAppearance.iconStyle) { resolveIconShape(iconAppearance.iconStyle) }
+    val applyFrameChrome = iconAppearance.iconPackPackage == null && iconAppearance.iconStyle != IconStyle.ADAPTIVE
 
     val jiggleAngle: Float
     val jiggleOffsetY: Float
@@ -215,88 +225,118 @@ fun IosAppIconTile(
             )
             .padding(vertical = 2.dp)
     ) {
-        Box(
+        BoxWithConstraints(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(62.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
-            AppIcon(
-                app = app,
-                shape = squircleShape,
-                modifier = Modifier
-                    .size(56.dp)
-                    .shadow(
-                        elevation = 6.dp,
-                        shape = squircleShape,
-                        ambientColor = Color.Black.copy(alpha = 0.45f),
-                        spotColor = Color.Black.copy(alpha = 0.55f)
-                    )
-                    .border(
-                        width = 0.5.dp,
-                        color = Color.White.copy(alpha = 0.16f),
-                        shape = squircleShape
-                    )
-            )
+            val effectiveIconDp = DesktopLayoutMath.resolveIconSizeDp(
+                requestedDp = iconSizeDp,
+                availableCellWidthDp = maxWidth.value
+            ).dp
+            val containerDp = effectiveIconDp + 6.dp
 
-            if (isEditMode) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset(x = (-1).dp, y = (-1).dp)
-                        .size(21.dp)
-                        .shadow(2.dp, CircleShape)
-                        .clip(CircleShape)
-                        .background(IosRemoveBadgeBg)
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onRemoveClick()
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(containerDp)
+            ) {
+                val iconModifier = Modifier
+                    .size(effectiveIconDp)
+                    .then(
+                        if (applyFrameChrome) {
+                            Modifier
+                                .shadow(
+                                    elevation = 6.dp,
+                                    shape = iconShape,
+                                    ambientColor = Color.Black.copy(alpha = 0.45f),
+                                    spotColor = Color.Black.copy(alpha = 0.55f)
+                                )
+                                .border(
+                                    width = 0.5.dp,
+                                    color = Color.White.copy(alpha = 0.16f),
+                                    shape = iconShape
+                                )
+                        } else {
+                            Modifier
                         }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Remove,
-                        contentDescription = "移除 ${app.label}",
-                        tint = IosRemoveBadgeIcon,
-                        modifier = Modifier.size(14.dp)
                     )
+
+                AppIcon(
+                    app = app,
+                    shape = iconShape,
+                    iconStyle = iconAppearance.iconStyle,
+                    iconPackPackage = iconAppearance.iconPackPackage,
+                    modifier = iconModifier
+                )
+
+                if (isEditMode) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .offset(x = (-1).dp, y = (-1).dp)
+                            .size(21.dp)
+                            .shadow(2.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(IosRemoveBadgeBg)
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onRemoveClick()
+                            }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Remove,
+                            contentDescription = "移除 ${app.label}",
+                            tint = IosRemoveBadgeIcon,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(5.dp))
+        if (showAppLabels) {
+            Spacer(modifier = Modifier.height(5.dp))
 
-        Text(
-            text = app.label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelSmall.copy(
-                color = Color.White,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 0.sp,
-                shadow = Shadow(
-                    color = IosLabelShadow,
-                    offset = Offset(0f, 1.5f),
-                    blurRadius = 4f
-                )
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 2.dp)
-        )
+            Text(
+                text = app.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    color = Color.White,
+                    fontSize = DesktopLayoutMath.labelFontSizeSp(gridColumns).sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.sp,
+                    shadow = Shadow(
+                        color = IosLabelShadow,
+                        offset = Offset(0f, 1.5f),
+                        blurRadius = 4f
+                    )
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp)
+            )
+        }
     }
 }
 
 /**
- * Dashed/frosted "+" add slot matching iOS squircle icon geometry.
+ * Dashed/frosted "+" add slot matching iOS icon geometry.
  */
 @Composable
 fun IosAddIconSlot(
     label: String = "添加",
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    iconSizeDp: Float = LauncherPreferences.DEFAULT_ICON_SIZE_DP,
+    gridColumns: Int = LauncherPreferences.DESKTOP_GRID_COLUMNS,
+    showAppLabels: Boolean = true,
+    iconStyle: IconStyle = LocalIconAppearance.current.iconStyle
 ) {
-    val squircleShape = remember { IosSquircleShape() }
+    val slotShape = remember(iconStyle) {
+        if (iconStyle == IconStyle.ADAPTIVE) RoundedCornerShape(14.dp) else resolveIconShape(iconStyle)
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -308,58 +348,71 @@ fun IosAddIconSlot(
             )
             .padding(vertical = 2.dp)
     ) {
-        Box(
+        BoxWithConstraints(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(62.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
+            val effectiveIconDp = DesktopLayoutMath.resolveIconSizeDp(
+                requestedDp = iconSizeDp,
+                availableCellWidthDp = maxWidth.value
+            ).dp
+            val containerDp = effectiveIconDp + 6.dp
+
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(squircleShape)
-                    .background(Color.White.copy(alpha = 0.14f))
-                    .border(
-                        width = 1.dp,
-                        color = Color.White.copy(alpha = 0.30f),
-                        shape = squircleShape
-                    )
+                modifier = Modifier.size(containerDp)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = label,
-                    tint = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.size(26.dp)
-                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(effectiveIconDp)
+                        .clip(slotShape)
+                        .background(Color.White.copy(alpha = 0.14f))
+                        .border(
+                            width = 1.dp,
+                            color = Color.White.copy(alpha = 0.30f),
+                            shape = slotShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = label,
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size((effectiveIconDp * 0.46f).coerceAtLeast(18.dp))
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(5.dp))
+        if (showAppLabels) {
+            Spacer(modifier = Modifier.height(5.dp))
 
-        Text(
-            text = label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.labelSmall.copy(
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 0.sp,
-                shadow = Shadow(
-                    color = IosLabelShadow,
-                    offset = Offset(0f, 1.5f),
-                    blurRadius = 4f
-                )
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 2.dp)
-        )
+            Text(
+                text = label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = DesktopLayoutMath.labelFontSizeSp(gridColumns).sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.sp,
+                    shadow = Shadow(
+                        color = IosLabelShadow,
+                        offset = Offset(0f, 1.5f),
+                        blurRadius = 4f
+                    )
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp)
+            )
+        }
     }
 }
 
 /**
- * Top Frosted Glass Favorites Card on the iOS Home Page with 4-column squircle grid.
+ * Top Frosted Glass Favorites Card on the iOS Home Page with configurable column grid.
  */
 @Composable
 fun IosFavoritesCard(
@@ -369,9 +422,15 @@ fun IosFavoritesCard(
     onEnterEditMode: () -> Unit,
     onRemoveFavorite: (AppItem) -> Unit,
     onOpenFavoritesPicker: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    gridColumns: Int = LauncherPreferences.FAVORITES_GRID_COLUMNS,
+    iconSizeDp: Float = LauncherPreferences.DEFAULT_ICON_SIZE_DP,
+    showAppLabels: Boolean = true,
+    iconAppearance: IconAppearance = LocalIconAppearance.current
 ) {
     val haptic = LocalHapticFeedback.current
+    val columns = LauncherPreferences.normalizeGridColumns(gridColumns)
+    val horizontalSpacing = DesktopLayoutMath.horizontalSpacingDp(columns).dp
 
     IosFrostedGlassCard(
         modifier = modifier.fillMaxWidth(),
@@ -444,6 +503,10 @@ fun IosFavoritesCard(
                 IosAddIconSlot(
                     label = "添加常用",
                     onClick = onOpenFavoritesPicker,
+                    iconSizeDp = iconSizeDp,
+                    gridColumns = columns,
+                    showAppLabels = true,
+                    iconStyle = iconAppearance.iconStyle,
                     modifier = Modifier.width(72.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
@@ -468,17 +531,16 @@ fun IosFavoritesCard(
             }
         } else {
             val slotCount = if (isEditMode) favorites.size + 1 else favorites.size
-            val rows = (slotCount + LauncherPreferences.FAVORITES_GRID_COLUMNS - 1) /
-                LauncherPreferences.FAVORITES_GRID_COLUMNS
+            val rows = (slotCount + columns - 1) / columns
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (rowIndex in 0 until rows) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
                     ) {
-                        for (colIndex in 0 until LauncherPreferences.FAVORITES_GRID_COLUMNS) {
-                            val index = rowIndex * LauncherPreferences.FAVORITES_GRID_COLUMNS + colIndex
+                        for (colIndex in 0 until columns) {
+                            val index = rowIndex * columns + colIndex
                             if (index < favorites.size) {
                                 val app = favorites[index]
                                 IosAppIconTile(
@@ -488,12 +550,20 @@ fun IosFavoritesCard(
                                     onClick = { onLaunchApp(app) },
                                     onLongClick = { onEnterEditMode() },
                                     onRemoveClick = { onRemoveFavorite(app) },
+                                    iconSizeDp = iconSizeDp,
+                                    gridColumns = columns,
+                                    showAppLabels = showAppLabels,
+                                    iconAppearance = iconAppearance,
                                     modifier = Modifier.weight(1f)
                                 )
                             } else if (isEditMode && index == favorites.size) {
                                 IosAddIconSlot(
                                     label = "添加",
                                     onClick = onOpenFavoritesPicker,
+                                    iconSizeDp = iconSizeDp,
+                                    gridColumns = columns,
+                                    showAppLabels = showAppLabels,
+                                    iconStyle = iconAppearance.iconStyle,
                                     modifier = Modifier.weight(1f)
                                 )
                             } else {
@@ -508,7 +578,7 @@ fun IosFavoritesCard(
 }
 
 /**
- * 4x6 iOS Desktop App Grid with squircle icons, shadowed labels, and edit mode jiggle.
+ * 4x6 or 5x6 iOS Desktop App Grid with customizable icons, labels, and edit mode jiggle.
  */
 @Composable
 fun IosDesktopGrid(
@@ -516,11 +586,19 @@ fun IosDesktopGrid(
     isEditMode: Boolean,
     onLaunchApp: (AppItem) -> Unit,
     onEnterEditMode: () -> Unit,
+    onOpenDesktopMenu: () -> Unit,
     onRemoveDesktopApp: (AppItem) -> Unit,
     onOpenDesktopPicker: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    gridColumns: Int = LauncherPreferences.DESKTOP_GRID_COLUMNS,
+    maxDesktopApps: Int = LauncherPreferences.MAX_DESKTOP_APPS,
+    iconSizeDp: Float = LauncherPreferences.DEFAULT_ICON_SIZE_DP,
+    showAppLabels: Boolean = true,
+    iconAppearance: IconAppearance = LocalIconAppearance.current
 ) {
-    val visibleDesktopApps = desktopApps.take(LauncherPreferences.MAX_DESKTOP_APPS)
+    val columns = LauncherPreferences.normalizeGridColumns(gridColumns)
+    val horizontalSpacing = DesktopLayoutMath.horizontalSpacingDp(columns).dp
+    val visibleDesktopApps = desktopApps.take(maxDesktopApps)
 
     if (visibleDesktopApps.isEmpty() && !isEditMode) {
         IosFrostedGlassCard(
@@ -528,7 +606,7 @@ fun IosDesktopGrid(
             cornerRadius = 24.dp,
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
             onClick = onOpenDesktopPicker,
-            onLongClick = onEnterEditMode
+            onLongClick = onOpenDesktopMenu
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -542,7 +620,7 @@ fun IosDesktopGrid(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "桌面图标区 (4×6)",
+                    text = "桌面图标区 (${columns}×${LauncherPreferences.DESKTOP_GRID_ROWS})",
                     style = MaterialTheme.typography.titleSmall.copy(
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold
@@ -550,7 +628,7 @@ fun IosDesktopGrid(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "点击添加桌面应用，或长按空白处进入编辑模式",
+                    text = "点击添加桌面应用，或长按桌面空白处打开菜单",
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = Color.White.copy(alpha = 0.68f)
@@ -561,10 +639,9 @@ fun IosDesktopGrid(
         return
     }
 
-    val showAddSlot = isEditMode && visibleDesktopApps.size < LauncherPreferences.MAX_DESKTOP_APPS
+    val showAddSlot = isEditMode && visibleDesktopApps.size < maxDesktopApps
     val totalSlots = visibleDesktopApps.size + if (showAddSlot) 1 else 0
-    val rows = ((totalSlots + LauncherPreferences.DESKTOP_GRID_COLUMNS - 1) /
-        LauncherPreferences.DESKTOP_GRID_COLUMNS)
+    val rows = ((totalSlots + columns - 1) / columns)
         .coerceAtMost(LauncherPreferences.DESKTOP_GRID_ROWS)
 
     Column(
@@ -574,10 +651,10 @@ fun IosDesktopGrid(
         for (rowIndex in 0 until rows) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
             ) {
-                for (colIndex in 0 until LauncherPreferences.DESKTOP_GRID_COLUMNS) {
-                    val index = rowIndex * LauncherPreferences.DESKTOP_GRID_COLUMNS + colIndex
+                for (colIndex in 0 until columns) {
+                    val index = rowIndex * columns + colIndex
                     if (index < visibleDesktopApps.size) {
                         val app = visibleDesktopApps[index]
                         IosAppIconTile(
@@ -587,12 +664,20 @@ fun IosDesktopGrid(
                             onClick = { onLaunchApp(app) },
                             onLongClick = onEnterEditMode,
                             onRemoveClick = { onRemoveDesktopApp(app) },
+                            iconSizeDp = iconSizeDp,
+                            gridColumns = columns,
+                            showAppLabels = showAppLabels,
+                            iconAppearance = iconAppearance,
                             modifier = Modifier.weight(1f)
                         )
                     } else if (showAddSlot && index == visibleDesktopApps.size) {
                         IosAddIconSlot(
                             label = "添加",
                             onClick = onOpenDesktopPicker,
+                            iconSizeDp = iconSizeDp,
+                            gridColumns = columns,
+                            showAppLabels = showAppLabels,
+                            iconStyle = iconAppearance.iconStyle,
                             modifier = Modifier.weight(1f)
                         )
                     } else {

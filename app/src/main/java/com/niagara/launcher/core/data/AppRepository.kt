@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.UserHandle
 import android.provider.Settings
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.model.IconPackInfo
 import com.niagara.launcher.core.pinyin.PinyinEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,13 +35,20 @@ class AppRepository(private val context: Context) {
     private val eventChannel = Channel<PackageChangeEvent>(Channel.UNLIMITED)
     private val observingStarted = AtomicBoolean(false)
 
-    val iconCache: AppIconCache = AppIconCache(packageManager)
+    val iconPackManager: IconPackManager = IconPackManager(context)
+    val iconCache: AppIconCache = AppIconCache(packageManager, iconPackManager)
 
     private val _installedApps = MutableStateFlow<List<AppItem>>(emptyList())
     val installedAppsFlow: StateFlow<List<AppItem>> = _installedApps.asStateFlow()
 
     private val _isLoaded = MutableStateFlow(false)
     val isLoaded: StateFlow<Boolean> = _isLoaded.asStateFlow()
+
+    private val _installedIconPacks = MutableStateFlow<List<IconPackInfo>>(emptyList())
+    val installedIconPacksFlow: StateFlow<List<IconPackInfo>> = _installedIconPacks.asStateFlow()
+
+    private val _iconPacksLoaded = MutableStateFlow(false)
+    val iconPacksLoaded: StateFlow<Boolean> = _iconPacksLoaded.asStateFlow()
 
     private val launcherAppsCallback = object : LauncherApps.Callback() {
         override fun onPackageRemoved(packageName: String, user: UserHandle) {
@@ -123,6 +131,14 @@ class AppRepository(private val context: Context) {
         val loaded = loadInstalledApps()
         _installedApps.value = loaded
         _isLoaded.value = true
+        refreshIconPacks()
+    }
+
+    suspend fun refreshIconPacks(): List<IconPackInfo> = withContext(Dispatchers.IO) {
+        val packs = iconPackManager.loadInstalledIconPacks()
+        _installedIconPacks.value = packs
+        _iconPacksLoaded.value = true
+        packs
     }
 
     private suspend fun processEventBatch(batch: List<PackageChangeEvent>) {
@@ -158,6 +174,7 @@ class AppRepository(private val context: Context) {
 
         _installedApps.value = updatedList
         _isLoaded.value = true
+        refreshIconPacks()
     }
 
     /**

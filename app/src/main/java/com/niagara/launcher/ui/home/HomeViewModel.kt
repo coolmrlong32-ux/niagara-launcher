@@ -6,9 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.niagara.launcher.core.data.AppRepository
 import com.niagara.launcher.core.data.PreferencesRepository
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.search.AppSearchEngine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -33,6 +36,8 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
+    private val _liveIconSizeOverride = MutableStateFlow<Float?>(null)
+    private var iconSizePersistJob: Job? = null
 
     private val _snackbarEvents = MutableSharedFlow<HomeSnackbarEvent>(extraBufferCapacity = 8)
     val snackbarEvents: SharedFlow<HomeSnackbarEvent> = _snackbarEvents.asSharedFlow()
@@ -40,6 +45,7 @@ class HomeViewModel(
     init {
         appRepository.startObservingPackages()
         observeData()
+        observeIconPacks()
     }
 
     private fun observeData() {
@@ -48,9 +54,15 @@ class HomeViewModel(
                 appRepository.installedAppsFlow,
                 appRepository.isLoaded,
                 preferencesRepository.launcherPreferencesFlow,
-                _searchQuery
-            ) { installedApps, isLoaded, prefs, query ->
-                val processed = processApps(installedApps, prefs)
+                _searchQuery,
+                _liveIconSizeOverride
+            ) { installedApps, isLoaded, prefs, query, liveIconSize ->
+                val effectivePrefs = if (liveIconSize != null) {
+                    prefs.copy(desktopIconSizeDp = liveIconSize)
+                } else {
+                    prefs
+                }
+                val processed = processApps(installedApps, effectivePrefs)
                 val searchResults = if (query.isBlank()) {
                     emptyList()
                 } else {
@@ -92,6 +104,23 @@ class HomeViewModel(
         }
     }
 
+    private fun observeIconPacks() {
+        viewModelScope.launch {
+            combine(
+                appRepository.installedIconPacksFlow,
+                appRepository.iconPacksLoaded,
+                preferencesRepository.launcherPreferencesFlow
+            ) { packs, packsLoaded, prefs ->
+                Triple(packs, packsLoaded, prefs.iconPackPackage)
+            }.collect { (packs, packsLoaded, selectedPack) ->
+                _uiState.update { it.copy(installedIconPacks = packs) }
+                if (packsLoaded && selectedPack != null && packs.none { it.packageName == selectedPack }) {
+                    preferencesRepository.setIconPackPackage(null)
+                }
+            }
+        }
+    }
+
     private fun processApps(
         allApps: List<AppItem>,
         prefs: LauncherPreferences
@@ -113,7 +142,7 @@ class HomeViewModel(
             }
         }
 
-        // Desktop apps exclude hidden apps and respect the 4x6 grid cap
+        // Desktop apps exclude hidden apps and respect the current grid capacity (24 or 30)
         val desktopApps = prefs.desktopAppKeys
             .asSequence()
             .filterNot { prefs.hiddenKeys.contains(it) }
@@ -124,7 +153,7 @@ class HomeViewModel(
                     isOnDesktop = true
                 )
             }
-            .take(LauncherPreferences.MAX_DESKTOP_APPS)
+            .take(prefs.maxDesktopApps)
             .toList()
 
         // Visible apps excluding hidden ones
@@ -214,6 +243,54 @@ class HomeViewModel(
         _uiState.update { it.copy(isHomeEditMode = enabled) }
     }
 
+    fun openDesktopMenu() {
+        _uiState.update { it.copy(isDesktopMenuVisible = true) }
+    }
+
+    fun closeDesktopMenu() {
+        _uiState.update { it.copy(isDesktopMenuVisible = false) }
+    }
+
+    fun openDesktopSettings() {
+        _uiState.update {
+            it.copy(
+                isDesktopMenuVisible = false,
+                isSettingsSheetVisible = false,
+                isDesktopSettingsVisible = true
+            )
+        }
+    }
+
+    fun closeDesktopSettings() {
+        _uiState.update { it.copy(isDesktopSettingsVisible = false) }
+    }
+
+    fun openIconPicker() {
+        _uiState.update {
+            it.copy(
+                isDesktopMenuVisible = false,
+                isIconPickerVisible = true
+            )
+        }
+        if (!appRepository.iconPacksLoaded.value) {
+            refreshIconPacks()
+        }
+    }
+
+    fun closeIconPicker() {
+        _uiState.update { it.copy(isIconPickerVisible = false) }
+    }
+
+    fun closeAllDesktopOverlays() {
+        _uiState.update {
+            it.copy(
+                isDesktopMenuVisible = false,
+                isIconPickerVisible = false,
+                isDesktopSettingsVisible = false
+            )
+        }
+    }
+
     fun openAppPicker(mode: AppPickerMode) {
         _uiState.update { it.copy(appPickerMode = mode) }
     }
@@ -256,7 +333,7 @@ class HomeViewModel(
         viewModelScope.launch {
             val applied = preferencesRepository.toggleDesktopApp(app.key)
             if (!applied) {
-                _snackbarEvents.tryEmit(HomeSnackbarEvent.DesktopFull(LauncherPreferences.MAX_DESKTOP_APPS))
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.DesktopFull(_uiState.value.preferences.maxDesktopApps))
             }
         }
     }
@@ -265,7 +342,7 @@ class HomeViewModel(
         viewModelScope.launch {
             val applied = preferencesRepository.addDesktopApp(app.key)
             if (!applied) {
-                _snackbarEvents.tryEmit(HomeSnackbarEvent.DesktopFull(LauncherPreferences.MAX_DESKTOP_APPS))
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.DesktopFull(_uiState.value.preferences.maxDesktopApps))
             }
         }
     }
@@ -319,6 +396,71 @@ class HomeViewModel(
     fun setShowBatteryInGlance(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setShowBatteryInGlance(enabled)
+        }
+    }
+
+    fun previewDesktopIconSizeDp(sizeDp: Float) {
+        val clamped = LauncherPreferences.clampIconSizeDp(sizeDp)
+        _liveIconSizeOverride.value = clamped
+        iconSizePersistJob?.cancel()
+        iconSizePersistJob = viewModelScope.launch {
+            delay(80)
+            preferencesRepository.setDesktopIconSizeDp(clamped)
+        }
+    }
+
+    fun commitDesktopIconSizeDp(sizeDp: Float) {
+        val clamped = LauncherPreferences.clampIconSizeDp(sizeDp)
+        _liveIconSizeOverride.value = clamped
+        iconSizePersistJob?.cancel()
+        iconSizePersistJob = viewModelScope.launch {
+            preferencesRepository.setDesktopIconSizeDp(clamped)
+            _liveIconSizeOverride.value = null
+        }
+    }
+
+    fun setDesktopGridColumns(columns: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setDesktopGridColumns(columns)
+        }
+    }
+
+    fun setShowAppLabels(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowAppLabels(enabled)
+        }
+    }
+
+    fun setShowFavoritesBar(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowFavoritesBar(enabled)
+        }
+    }
+
+    fun setIconStyle(style: IconStyle) {
+        viewModelScope.launch {
+            preferencesRepository.setIconStyle(style)
+        }
+    }
+
+    fun setIconPackPackage(packageName: String?) {
+        val normalized = packageName?.trim()?.takeIf { it.isNotEmpty() }
+        viewModelScope.launch {
+            if (normalized != null) {
+                appRepository.iconPackManager.preloadPack(normalized)
+            }
+            preferencesRepository.setIconPackPackage(normalized)
+        }
+    }
+
+    fun refreshIconPacks() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshingIconPacks = true) }
+            try {
+                appRepository.refreshIconPacks()
+            } finally {
+                _uiState.update { it.copy(isRefreshingIconPacks = false) }
+            }
         }
     }
 

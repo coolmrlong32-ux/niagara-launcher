@@ -1,6 +1,11 @@
 package com.niagara.launcher.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -24,6 +29,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -37,12 +43,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.niagara.launcher.core.model.LauncherPreferences
+import com.niagara.launcher.core.data.LocalIconAppearance
 import com.niagara.launcher.ui.home.components.AlphabetWaveBar
 import com.niagara.launcher.ui.home.components.AppActionBottomSheet
 import com.niagara.launcher.ui.home.components.AppListItem
 import com.niagara.launcher.ui.home.components.AppPickerBottomSheet
+import com.niagara.launcher.ui.home.components.DesktopMenuBottomSheet
+import com.niagara.launcher.ui.home.components.DesktopSettingsScreen
 import com.niagara.launcher.ui.home.components.GlanceWidget
+import com.niagara.launcher.ui.home.components.IconPickerScreen
 import com.niagara.launcher.ui.home.components.IosHomePage
 import com.niagara.launcher.ui.home.components.IosPageIndicator
 import com.niagara.launcher.ui.home.components.LauncherSettingsBottomSheet
@@ -105,14 +114,18 @@ fun HomeScreen(
         }
     }
 
-    // Handle system back button in priority order: Search -> Edit Mode -> Drawer Scroll -> Home Page
+    // Handle system back button in priority order: Icon Picker -> Desktop Settings -> Search -> Edit Mode -> Drawer Scroll -> Home Page
     BackHandler(
-        enabled = uiState.isSearching ||
+        enabled = uiState.isIconPickerVisible ||
+            uiState.isDesktopSettingsVisible ||
+            uiState.isSearching ||
             uiState.isHomeEditMode ||
             pagerState.currentPage != 0 ||
             listState.firstVisibleItemIndex > 0
     ) {
         when {
+            uiState.isIconPickerVisible -> viewModel.closeIconPicker()
+            uiState.isDesktopSettingsVisible -> viewModel.closeDesktopSettings()
             uiState.isSearching -> viewModel.setSearching(false)
             uiState.isHomeEditMode -> viewModel.setHomeEditMode(false)
             pagerState.currentPage == 1 && listState.firstVisibleItemIndex > 0 -> {
@@ -137,47 +150,57 @@ fun HomeScreen(
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0x55000000),
-                        Color(0x33000000),
-                        Color(0x66000000)
+    val previewApps = remember(uiState.favorites, uiState.desktopApps, uiState.allApps) {
+        (uiState.favorites + uiState.desktopApps + uiState.allApps)
+            .distinctBy { it.key }
+            .take(5)
+    }
+
+    CompositionLocalProvider(LocalIconAppearance provides uiState.preferences.iconAppearance) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0x55000000),
+                            Color(0x33000000),
+                            Color(0x66000000)
+                        )
                     )
                 )
-            )
-    ) {
-        if (uiState.isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            HorizontalPager(
-                state = pagerState,
-                userScrollEnabled = !uiState.isSearching,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                when (page) {
-                    0 -> {
-                        IosHomePage(
-                            favorites = uiState.favorites,
-                            desktopApps = uiState.desktopApps,
-                            isEditMode = uiState.isHomeEditMode,
-                            showBattery = uiState.preferences.showBatteryInGlance,
-                            onLaunchApp = { viewModel.launchApp(it) },
-                            onEnterEditMode = { viewModel.setHomeEditMode(true) },
-                            onExitEditMode = { viewModel.setHomeEditMode(false) },
-                            onRemoveFavorite = { viewModel.removeFavorite(it) },
-                            onRemoveDesktopApp = { viewModel.removeDesktopApp(it) },
-                            onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
-                            onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
-                            onSearchClick = { viewModel.setSearching(true) },
-                            onSettingsClick = { viewModel.openSettings() }
-                        )
-                    }
+        ) {
+            if (uiState.isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                HorizontalPager(
+                    state = pagerState,
+                    userScrollEnabled = !uiState.isSearching &&
+                        !uiState.isDesktopSettingsVisible &&
+                        !uiState.isIconPickerVisible,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    when (page) {
+                        0 -> {
+                            IosHomePage(
+                                favorites = uiState.favorites,
+                                desktopApps = uiState.desktopApps,
+                                isEditMode = uiState.isHomeEditMode,
+                                preferences = uiState.preferences,
+                                onLaunchApp = { viewModel.launchApp(it) },
+                                onEnterEditMode = { viewModel.setHomeEditMode(true) },
+                                onExitEditMode = { viewModel.setHomeEditMode(false) },
+                                onOpenDesktopMenu = { viewModel.openDesktopMenu() },
+                                onOpenDesktopSettings = { viewModel.openDesktopSettings() },
+                                onRemoveFavorite = { viewModel.removeFavorite(it) },
+                                onRemoveDesktopApp = { viewModel.removeDesktopApp(it) },
+                                onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
+                                onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
+                                onSearchClick = { viewModel.setSearching(true) }
+                            )
+                        }
 
                     else -> {
                         Row(
@@ -378,12 +401,25 @@ fun HomeScreen(
                         mode = pickerMode,
                         allApps = uiState.allApps,
                         selectedKeys = uiState.desktopApps.map { it.key }.toSet(),
-                        maxSelection = LauncherPreferences.MAX_DESKTOP_APPS,
+                        maxSelection = uiState.preferences.maxDesktopApps,
                         onToggleApp = { viewModel.toggleDesktopApp(it) },
                         onDismissRequest = { viewModel.closeAppPicker() }
                     )
                 }
             }
+        }
+
+        // iOS-style Bottom Sheet Menu on Home Screen empty-space long press
+        if (uiState.isDesktopMenuVisible) {
+            DesktopMenuBottomSheet(
+                preferences = uiState.preferences,
+                installedIconPacks = uiState.installedIconPacks,
+                onDismissRequest = { viewModel.closeDesktopMenu() },
+                onOpenIconPicker = { viewModel.openIconPicker() },
+                onOpenDesktopSettings = { viewModel.openDesktopSettings() },
+                onEnterEditMode = { viewModel.setHomeEditMode(true) },
+                onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) }
+            )
         }
 
         // Launcher Settings & Hidden Apps Management Sheet
@@ -395,8 +431,56 @@ fun HomeScreen(
                 onRightHandedChange = { viewModel.setRightHanded(it) },
                 onHapticFeedbackChange = { viewModel.setHapticFeedbackEnabled(it) },
                 onShowBatteryChange = { viewModel.setShowBatteryInGlance(it) },
-                onUnhideApp = { viewModel.unhideApp(it) }
+                onUnhideApp = { viewModel.unhideApp(it) },
+                onOpenDesktopSettings = { viewModel.openDesktopSettings() }
             )
         }
+
+        // Full-screen iOS Settings Inset Grouped List: Desktop Settings
+        AnimatedVisibility(
+            visible = uiState.isDesktopSettingsVisible,
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+        ) {
+            DesktopSettingsScreen(
+                preferences = uiState.preferences,
+                previewApps = previewApps,
+                installedIconPacks = uiState.installedIconPacks,
+                hiddenAppsCount = uiState.hiddenApps.size,
+                onDismiss = { viewModel.closeDesktopSettings() },
+                onIconSizePreview = { viewModel.previewDesktopIconSizeDp(it) },
+                onIconSizeCommit = { viewModel.commitDesktopIconSizeDp(it) },
+                onGridColumnsChange = { viewModel.setDesktopGridColumns(it) },
+                onShowAppLabelsChange = { viewModel.setShowAppLabels(it) },
+                onShowFavoritesBarChange = { viewModel.setShowFavoritesBar(it) },
+                onOpenIconPicker = { viewModel.openIconPicker() },
+                onEnterEditMode = {
+                    viewModel.closeDesktopSettings()
+                    viewModel.setHomeEditMode(true)
+                },
+                onOpenLauncherSettings = { viewModel.openSettings() }
+            )
+        }
+
+        // Full-screen iOS Settings Inset Grouped List: Icon Style & Third-Party Icon Pack Picker
+        AnimatedVisibility(
+            visible = uiState.isIconPickerVisible,
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+        ) {
+            IconPickerScreen(
+                preferences = uiState.preferences,
+                previewApps = previewApps,
+                installedIconPacks = uiState.installedIconPacks,
+                isRefreshingIconPacks = uiState.isRefreshingIconPacks,
+                showBackToSettings = uiState.isDesktopSettingsVisible,
+                onSelectIconStyle = { viewModel.setIconStyle(it) },
+                onSelectIconPack = { viewModel.setIconPackPackage(it) },
+                onRefreshIconPacks = { viewModel.refreshIconPacks() },
+                onBack = { viewModel.closeIconPicker() },
+                onDone = { viewModel.closeAllDesktopOverlays() }
+            )
+        }
+    }
     }
 }

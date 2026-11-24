@@ -1,6 +1,7 @@
 package com.niagara.launcher.ui.home
 
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.model.IconPackInfo
 import com.niagara.launcher.core.model.LauncherPreferences
 
 enum class AppPickerMode {
@@ -26,8 +27,13 @@ data class HomeUiState(
     val hiddenSearchResults: List<AppItem> = emptyList(),
     val isSearching: Boolean = false,
     val isHomeEditMode: Boolean = false,
+    val isDesktopMenuVisible: Boolean = false,
+    val isDesktopSettingsVisible: Boolean = false,
+    val isIconPickerVisible: Boolean = false,
     val appPickerMode: AppPickerMode? = null,
     val isSettingsSheetVisible: Boolean = false,
     val selectedAppForMenu: AppItem? = null,
+    val installedIconPacks: List<IconPackInfo> = emptyList(),
+    val isRefreshingIconPacks: Boolean = false,
     val preferences: LauncherPreferences = LauncherPreferences()
 )

@@ -14,7 +14,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.BatteryFull
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Swipe
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.Visibility
@@ -52,7 +54,8 @@ fun LauncherSettingsBottomSheet(
     onRightHandedChange: (Boolean) -> Unit,
     onHapticFeedbackChange: (Boolean) -> Unit,
     onShowBatteryChange: (Boolean) -> Unit,
-    onUnhideApp: (AppItem) -> Unit
+    onUnhideApp: (AppItem) -> Unit,
+    onOpenDesktopSettings: (() -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -79,6 +82,57 @@ fun LauncherSettingsBottomSheet(
 
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
             Spacer(modifier = Modifier.height(8.dp))
+
+            if (onOpenDesktopSettings != null) {
+                Surface(
+                    onClick = {
+                        onDismissRequest()
+                        onOpenDesktopSettings()
+                    },
+                    color = Color.White.copy(alpha = 0.06f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.GridView,
+                            contentDescription = "桌面设置",
+                            tint = Color(0xFF0A84FF),
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "桌面设置与图标选择",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            )
+                            Text(
+                                text = "图标大小、4/5列网格、名称显示与第三方图标包",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color.White.copy(alpha = 0.55f),
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.55f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
 
             SettingSwitchRow(
                 icon = Icons.Outlined.Swipe,
