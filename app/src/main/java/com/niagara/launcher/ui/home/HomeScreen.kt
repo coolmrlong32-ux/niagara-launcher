@@ -1,5 +1,6 @@
 package com.niagara.launcher.ui.home
 
+import android.appwidget.AppWidgetManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -47,10 +48,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.niagara.launcher.core.data.LocalIconAppearance
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.model.BuiltInWidgetKind
+import com.niagara.launcher.core.model.HomeWidgetItem
 import com.niagara.launcher.core.system.ScreenLockController
 import com.niagara.launcher.core.system.ScreenLockResult
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import com.niagara.launcher.core.transition.LaunchSourceBounds
+import com.niagara.launcher.core.widget.LauncherAppWidgetHost
+import com.niagara.launcher.core.widget.SystemWidgetProviderEntry
 import com.niagara.launcher.ui.home.components.AllAppsDrawerPage
 import com.niagara.launcher.ui.home.components.AppActionBottomSheet
 import com.niagara.launcher.ui.home.components.AppPickerBottomSheet
@@ -62,6 +67,7 @@ import com.niagara.launcher.ui.home.components.IosPageIndicator
 import com.niagara.launcher.ui.home.components.LauncherSettingsBottomSheet
 import com.niagara.launcher.ui.home.components.ScreenLockGuideDialog
 import com.niagara.launcher.ui.home.components.WeatherConfigDialog
+import com.niagara.launcher.ui.home.components.WidgetPickerBottomSheet
 import com.niagara.launcher.ui.home.components.rememberForegroundDeviceStatus
 import com.niagara.launcher.ui.search.SearchOverlay
 import kotlinx.coroutines.delay
@@ -78,6 +84,10 @@ fun HomeScreen(
     returnToHomePulse: Int = 0,
     openSettingsPulse: Int = 0,
     returnToPageZeroPulse: Int = 0,
+    appWidgetHost: LauncherAppWidgetHost? = null,
+    appWidgetManager: AppWidgetManager? = null,
+    onRequestAddSystemWidget: (SystemWidgetProviderEntry) -> Unit = {},
+    onDeleteSystemWidgetId: (Int) -> Unit = {},
     onExternalAppLaunched: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -94,18 +104,25 @@ fun HomeScreen(
     var isHomeIconDragging by remember { mutableStateOf(false) }
     var isAlphabetScrubbing by remember { mutableStateOf(false) }
 
+    val hasDeviceStatusWidget = uiState.preferences.homeWidgets.any {
+        it is HomeWidgetItem.BuiltIn && it.kind == BuiltInWidgetKind.DEVICE_STATUS
+    }
+    val hasWeatherWidget = uiState.preferences.homeWidgets.any {
+        it is HomeWidgetItem.BuiltIn && it.kind == BuiltInWidgetKind.WEATHER
+    }
+
     // Foreground-only low-frequency device telemetry (RAM usage, battery temp & level)
     val deviceStatus = rememberForegroundDeviceStatus(
-        enabled = uiState.preferences.showDeviceStatusInGlance || uiState.preferences.showBatteryInGlance
+        enabled = hasDeviceStatusWidget
     )
 
     // Lazy background-safe weather refresh while foregrounded (never blocks cold startup)
     LaunchedEffect(
         lifecycleOwner,
-        uiState.preferences.showWeatherInGlance,
+        hasWeatherWidget,
         uiState.preferences.weatherLocationQuery
     ) {
-        if (!uiState.preferences.showWeatherInGlance || uiState.preferences.weatherLocationQuery.isBlank()) {
+        if (!hasWeatherWidget || uiState.preferences.weatherLocationQuery.isBlank()) {
             return@LaunchedEffect
         }
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -171,6 +188,7 @@ fun HomeScreen(
         if (returnToPageZeroPulse > 0) {
             viewModel.closeAllDesktopOverlays()
             viewModel.closeSettings()
+            viewModel.closeWidgetPicker()
             viewModel.setSearching(false)
             viewModel.setHomeEditMode(false)
             viewModel.clearLockedLetter()
@@ -211,13 +229,21 @@ fun HomeScreen(
                         duration = SnackbarDuration.Short
                     )
                 }
+
+                is HomeSnackbarEvent.WidgetsFull -> {
+                    snackbarHostState.showSnackbar(
+                        message = "桌面插件已满（最多 ${event.maxCount} 个）",
+                        duration = SnackbarDuration.Short
+                    )
+                }
             }
         }
     }
 
-    // Handle system back button in priority order: Lock Guide -> Icon Picker -> Desktop Settings -> Search -> Locked Letter -> Edit Mode -> Drawer Scroll -> Home Page
+    // Handle system back button in priority order: Lock Guide -> Widget Picker -> Icon Picker -> Desktop Settings -> Search -> Locked Letter -> Edit Mode -> Drawer Scroll -> Home Page
     BackHandler(
         enabled = uiState.isScreenLockGuideVisible ||
+            uiState.isWidgetPickerVisible ||
             uiState.isIconPickerVisible ||
             uiState.isDesktopSettingsVisible ||
             uiState.isSearching ||
@@ -228,6 +254,7 @@ fun HomeScreen(
     ) {
         when {
             uiState.isScreenLockGuideVisible -> viewModel.closeScreenLockGuide()
+            uiState.isWidgetPickerVisible -> viewModel.closeWidgetPicker()
             uiState.isIconPickerVisible -> viewModel.closeIconPicker()
             uiState.isDesktopSettingsVisible -> viewModel.closeDesktopSettings()
             uiState.isSearching -> viewModel.setSearching(false)
@@ -247,6 +274,7 @@ fun HomeScreen(
     }
 
     val isOverlayBlocking = uiState.isScreenLockGuideVisible ||
+        uiState.isWidgetPickerVisible ||
         uiState.isSearching ||
         uiState.isDesktopMenuVisible ||
         uiState.isDesktopSettingsVisible ||
@@ -321,6 +349,8 @@ fun HomeScreen(
                                     preferences = uiState.preferences,
                                     deviceStatus = deviceStatus,
                                     isWeatherRefreshing = uiState.isWeatherRefreshing,
+                                    appWidgetHost = appWidgetHost,
+                                    appWidgetManager = appWidgetManager,
                                     onWeatherClick = onWeatherTap,
                                     onWeatherLongClick = { viewModel.openWeatherConfigDialog() },
                                     onLaunchApp = { app, bounds -> launchWithTransition(app, bounds) },
@@ -335,6 +365,14 @@ fun HomeScreen(
                                     onDraggingChanged = { isHomeIconDragging = it },
                                     onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
                                     onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
+                                    onOpenWidgetPicker = { viewModel.openWidgetPicker(context) },
+                                    onRemoveWidget = { id ->
+                                        viewModel.removeHomeWidget(id, onSystemWidgetRemoved = onDeleteSystemWidgetId)
+                                    },
+                                    onMoveWidgetUp = { viewModel.moveHomeWidgetUp(it) },
+                                    onMoveWidgetDown = { viewModel.moveHomeWidgetDown(it) },
+                                    onResizeWidget = { id, newHeight -> viewModel.resizeHomeWidget(id, newHeight) },
+                                    onMoveSection = { section, delta -> viewModel.moveHomeSection(section, delta) },
                                     onSearchClick = { viewModel.setSearching(true) },
                                     isOverlayBlocking = isOverlayBlocking,
                                     onDoubleTapLock = onDoubleTapLock
@@ -476,7 +514,23 @@ fun HomeScreen(
                     onOpenIconPicker = { viewModel.openIconPicker() },
                     onOpenDesktopSettings = { viewModel.openDesktopSettings() },
                     onEnterEditMode = { viewModel.setHomeEditMode(true) },
-                    onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) }
+                    onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
+                    onOpenWidgetPicker = { viewModel.openWidgetPicker(context) }
+                )
+            }
+
+            // Built-in & System Android AppWidget Picker Bottom Sheet
+            if (uiState.isWidgetPickerVisible) {
+                WidgetPickerBottomSheet(
+                    currentWidgets = uiState.preferences.homeWidgets,
+                    systemWidgets = uiState.availableSystemWidgets,
+                    isLoadingSystemWidgets = uiState.isLoadingSystemWidgets,
+                    onAddBuiltInWidget = { viewModel.addBuiltInWidget(it) },
+                    onRemoveWidget = { id ->
+                        viewModel.removeHomeWidget(id, onSystemWidgetRemoved = onDeleteSystemWidgetId)
+                    },
+                    onSelectSystemWidget = onRequestAddSystemWidget,
+                    onDismissRequest = { viewModel.closeWidgetPicker() }
                 )
             }
 
@@ -493,6 +547,7 @@ fun HomeScreen(
                     onShowWeatherChange = { viewModel.setShowWeatherInGlance(it) },
                     onDoubleTapToLockChange = { viewModel.setDoubleTapToLockEnabled(it) },
                     onOpenScreenLockGuide = { viewModel.openScreenLockGuide() },
+                    onOpenWidgetPicker = { viewModel.openWidgetPicker(context) },
                     onConfigureWeatherClick = {
                         viewModel.closeSettings()
                         viewModel.openWeatherConfigDialog()

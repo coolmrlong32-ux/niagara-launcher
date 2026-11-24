@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,6 +44,7 @@ import com.niagara.launcher.core.theme.IosIconBadgeBlue
 import com.niagara.launcher.core.theme.IosIconBadgeGreen
 import com.niagara.launcher.core.theme.IosIconBadgeOrange
 import com.niagara.launcher.core.theme.IosIconBadgePurple
+import com.niagara.launcher.core.theme.IosIconBadgeTeal
 import com.niagara.launcher.core.theme.IosSettingsChevron
 import com.niagara.launcher.core.theme.IosSettingsDivider
 import com.niagara.launcher.core.theme.IosSettingsLabelPrimary
@@ -60,7 +62,8 @@ fun DesktopMenuBottomSheet(
     onOpenIconPicker: () -> Unit,
     onOpenDesktopSettings: () -> Unit,
     onEnterEditMode: () -> Unit,
-    onOpenDesktopPicker: () -> Unit
+    onOpenDesktopPicker: () -> Unit,
+    onOpenWidgetPicker: () -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val activePackLabel = preferences.iconPackPackage?.let { packPkg ->
@@ -143,12 +146,26 @@ fun DesktopMenuBottomSheet(
                     DesktopMenuRow(
                         icon = Icons.Rounded.Edit,
                         iconBg = IosIconBadgeOrange,
-                        title = "编辑桌面图标",
-                        subtitle = "进入抖动编辑模式以整理或移除图标",
+                        title = "编辑首页布局",
+                        subtitle = "自由编排应用、小部件与区块顺序",
                         showChevron = false,
                         onClick = {
                             onDismissRequest()
                             onEnterEditMode()
+                        }
+                    )
+
+                    IosInsetDivider(startIndent = 58.dp)
+
+                    DesktopMenuRow(
+                        icon = Icons.Rounded.Widgets,
+                        iconBg = IosIconBadgeTeal,
+                        title = "添加小部件与插件",
+                        subtitle = "已放置 ${preferences.homeWidgets.size} 个 · 支持系统原生小部件",
+                        showChevron = true,
+                        onClick = {
+                            onDismissRequest()
+                            onOpenWidgetPicker()
                         }
                     )
 

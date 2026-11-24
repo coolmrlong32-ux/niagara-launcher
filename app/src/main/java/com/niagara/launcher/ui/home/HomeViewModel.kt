@@ -1,5 +1,6 @@
 package com.niagara.launcher.ui.home
 
+import android.content.Context
 import android.view.View
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -9,10 +10,15 @@ import com.niagara.launcher.core.data.PreferencesRepository
 import com.niagara.launcher.core.data.WeatherRefreshResult
 import com.niagara.launcher.core.data.WeatherRepository
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.model.BuiltInWidgetKind
+import com.niagara.launcher.core.model.HomeSectionType
+import com.niagara.launcher.core.model.HomeWidgetCodec
+import com.niagara.launcher.core.model.HomeWidgetItem
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.search.AppSearchEngine
 import com.niagara.launcher.core.transition.LaunchSourceBounds
+import com.niagara.launcher.core.widget.SystemWidgetManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -508,7 +514,10 @@ class HomeViewModel(
 
     fun refreshWeatherIfStale(force: Boolean = false) {
         val prefs = _uiState.value.preferences
-        if (!prefs.showWeatherInGlance || prefs.weatherLocationQuery.isBlank()) return
+        val hasWeatherWidget = prefs.homeWidgets.any {
+            it is HomeWidgetItem.BuiltIn && it.kind == BuiltInWidgetKind.WEATHER
+        }
+        if (prefs.weatherLocationQuery.isBlank() || (!prefs.showWeatherInGlance && !hasWeatherWidget)) return
         runWeatherRefresh(prefs, force = force)
     }
 
@@ -587,6 +596,121 @@ class HomeViewModel(
         _uiState.update { it.copy(isScreenLockGuideVisible = false) }
     }
 
+    fun openWidgetPicker(context: Context) {
+        _uiState.update {
+            it.copy(
+                isDesktopMenuVisible = false,
+                isWidgetPickerVisible = true,
+                isLoadingSystemWidgets = true
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val widgets = SystemWidgetManager.loadInstalledWidgets(context.applicationContext)
+                _uiState.update {
+                    it.copy(
+                        availableSystemWidgets = widgets,
+                        isLoadingSystemWidgets = false
+                    )
+                }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(isLoadingSystemWidgets = false) }
+            }
+        }
+    }
+
+    fun closeWidgetPicker() {
+        _uiState.update { it.copy(isWidgetPickerVisible = false) }
+    }
+
+    fun addBuiltInWidget(kind: BuiltInWidgetKind) {
+        val item = HomeWidgetItem.BuiltIn(
+            id = "builtin_${kind.storageKey}",
+            kind = kind,
+            heightDp = kind.defaultHeightDp
+        )
+        viewModelScope.launch {
+            val added = preferencesRepository.addHomeWidget(item)
+            if (!added) {
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.WidgetsFull(HomeWidgetCodec.MAX_HOME_WIDGETS))
+            }
+        }
+    }
+
+    fun addSystemWidget(
+        appWidgetId: Int,
+        providerPackage: String,
+        providerClass: String,
+        label: String,
+        heightDp: Int,
+        onRejected: () -> Unit = {}
+    ) {
+        val item = HomeWidgetItem.SystemAppWidget(
+            id = "sys_$appWidgetId",
+            appWidgetId = appWidgetId,
+            providerPackage = providerPackage,
+            providerClass = providerClass,
+            label = label,
+            heightDp = HomeWidgetCodec.clampHeightDp(heightDp)
+        )
+        viewModelScope.launch {
+            val added = preferencesRepository.addHomeWidget(item)
+            if (!added) {
+                onRejected()
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.WidgetsFull(HomeWidgetCodec.MAX_HOME_WIDGETS))
+            }
+        }
+    }
+
+    fun notifyWidgetsFull() {
+        _snackbarEvents.tryEmit(HomeSnackbarEvent.WidgetsFull(HomeWidgetCodec.MAX_HOME_WIDGETS))
+    }
+
+    fun removeHomeWidget(
+        id: String,
+        onSystemWidgetRemoved: ((Int) -> Unit)? = null
+    ) {
+        val existing = _uiState.value.preferences.homeWidgets.firstOrNull { it.id == id }
+        viewModelScope.launch {
+            preferencesRepository.removeHomeWidget(id)
+            if (existing is HomeWidgetItem.SystemAppWidget) {
+                onSystemWidgetRemoved?.invoke(existing.appWidgetId)
+            }
+        }
+    }
+
+    fun moveHomeWidgetUp(id: String) {
+        viewModelScope.launch {
+            preferencesRepository.moveHomeWidget(id, -1)
+        }
+    }
+
+    fun moveHomeWidgetDown(id: String) {
+        viewModelScope.launch {
+            preferencesRepository.moveHomeWidget(id, 1)
+        }
+    }
+
+    fun resizeHomeWidget(id: String, newHeightDp: Int) {
+        viewModelScope.launch {
+            preferencesRepository.resizeHomeWidget(id, newHeightDp)
+        }
+    }
+
+    fun moveHomeSection(section: HomeSectionType, delta: Int) {
+        viewModelScope.launch {
+            preferencesRepository.moveHomeSection(section, delta)
+        }
+    }
+
+    fun moveHomeSectionUp(section: HomeSectionType) {
+        moveHomeSection(section, -1)
+    }
+
+    fun moveHomeSectionDown(section: HomeSectionType) {
+        moveHomeSection(section, 1)
+    }
+
     fun setIconStyle(style: IconStyle) {
         viewModelScope.launch {
             preferencesRepository.setIconStyle(style)
@@ -637,4 +761,5 @@ class HomeViewModel(
 sealed interface HomeSnackbarEvent {
     data class AppHidden(val app: AppItem) : HomeSnackbarEvent
     data class DesktopFull(val maxCount: Int) : HomeSnackbarEvent
+    data class WidgetsFull(val maxCount: Int) : HomeSnackbarEvent
 }

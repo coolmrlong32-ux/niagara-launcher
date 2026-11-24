@@ -3,6 +3,7 @@ package com.niagara.launcher.ui.home
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.IconPackInfo
 import com.niagara.launcher.core.model.LauncherPreferences
+import com.niagara.launcher.core.widget.SystemWidgetProviderEntry
 
 enum class AppPickerMode {
     FAVORITES,
@@ -41,5 +42,8 @@ data class HomeUiState(
     val weatherErrorMessage: String? = null,
     val isWeatherConfigDialogVisible: Boolean = false,
     val isScreenLockGuideVisible: Boolean = false,
+    val isWidgetPickerVisible: Boolean = false,
+    val availableSystemWidgets: List<SystemWidgetProviderEntry> = emptyList(),
+    val isLoadingSystemWidgets: Boolean = false,
     val preferences: LauncherPreferences = LauncherPreferences()
 )

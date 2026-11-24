@@ -12,6 +12,10 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.niagara.launcher.core.model.HomeSectionOrderCodec
+import com.niagara.launcher.core.model.HomeSectionType
+import com.niagara.launcher.core.model.HomeWidgetCodec
+import com.niagara.launcher.core.model.HomeWidgetItem
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.model.WeatherSnapshot
@@ -150,6 +154,8 @@ class PreferencesRepository internal constructor(
         val ICON_STYLE = stringPreferencesKey("icon_style")
         val ICON_PACK_PACKAGE = stringPreferencesKey("icon_pack_package")
         val DOUBLE_TAP_TO_LOCK = booleanPreferencesKey("double_tap_to_lock_enabled")
+        val HOME_WIDGETS = stringPreferencesKey("home_widgets_v2")
+        val HOME_SECTION_ORDER = stringPreferencesKey("home_section_order_v2")
     }
 
     val launcherPreferencesFlow: Flow<LauncherPreferences> = dataStore.data.map { preferences ->
@@ -198,6 +204,8 @@ class PreferencesRepository internal constructor(
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
         val doubleTapToLockEnabled = preferences[PreferencesKeys.DOUBLE_TAP_TO_LOCK] ?: true
+        val homeWidgets = HomeWidgetCodec.decode(preferences[PreferencesKeys.HOME_WIDGETS])
+        val homeSectionOrder = HomeSectionOrderCodec.decode(preferences[PreferencesKeys.HOME_SECTION_ORDER])
 
         LauncherPreferences(
             favoriteKeys = favoriteList,
@@ -217,7 +225,9 @@ class PreferencesRepository internal constructor(
             showFavoritesBar = showFavoritesBar,
             iconStyle = iconStyle,
             iconPackPackage = iconPackPackage,
-            doubleTapToLockEnabled = doubleTapToLockEnabled
+            doubleTapToLockEnabled = doubleTapToLockEnabled,
+            homeWidgets = homeWidgets,
+            homeSectionOrder = homeSectionOrder
         )
     }
 
@@ -489,6 +499,59 @@ class PreferencesRepository internal constructor(
     suspend fun setDoubleTapToLockEnabled(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.DOUBLE_TAP_TO_LOCK] = enabled
+        }
+    }
+
+    suspend fun addHomeWidget(item: HomeWidgetItem): Boolean {
+        var succeeded = false
+        dataStore.edit { preferences ->
+            val current = HomeWidgetCodec.decode(preferences[PreferencesKeys.HOME_WIDGETS])
+            val (updated, applied) = HomeWidgetCodec.add(current, item)
+            succeeded = applied
+            if (applied) {
+                preferences[PreferencesKeys.HOME_WIDGETS] = HomeWidgetCodec.encode(updated)
+            }
+        }
+        return succeeded
+    }
+
+    suspend fun removeHomeWidget(id: String) {
+        dataStore.edit { preferences ->
+            val current = HomeWidgetCodec.decode(preferences[PreferencesKeys.HOME_WIDGETS])
+            val updated = HomeWidgetCodec.remove(current, id)
+            preferences[PreferencesKeys.HOME_WIDGETS] = HomeWidgetCodec.encode(updated)
+        }
+    }
+
+    suspend fun moveHomeWidget(id: String, delta: Int) {
+        if (delta == 0) return
+        dataStore.edit { preferences ->
+            val current = HomeWidgetCodec.decode(preferences[PreferencesKeys.HOME_WIDGETS])
+            val updated = HomeWidgetCodec.move(current, id, delta)
+            if (updated != current) {
+                preferences[PreferencesKeys.HOME_WIDGETS] = HomeWidgetCodec.encode(updated)
+            }
+        }
+    }
+
+    suspend fun resizeHomeWidget(id: String, heightDp: Int) {
+        dataStore.edit { preferences ->
+            val current = HomeWidgetCodec.decode(preferences[PreferencesKeys.HOME_WIDGETS])
+            val updated = HomeWidgetCodec.resize(current, id, heightDp)
+            if (updated != current) {
+                preferences[PreferencesKeys.HOME_WIDGETS] = HomeWidgetCodec.encode(updated)
+            }
+        }
+    }
+
+    suspend fun moveHomeSection(section: HomeSectionType, delta: Int) {
+        if (delta == 0) return
+        dataStore.edit { preferences ->
+            val current = HomeSectionOrderCodec.decode(preferences[PreferencesKeys.HOME_SECTION_ORDER])
+            val updated = HomeSectionOrderCodec.move(current, section, delta)
+            if (updated != current) {
+                preferences[PreferencesKeys.HOME_SECTION_ORDER] = HomeSectionOrderCodec.encode(updated)
+            }
         }
     }
 }

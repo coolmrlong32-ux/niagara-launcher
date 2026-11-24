@@ -317,7 +317,7 @@ private fun TelemetryDotDivider() {
     )
 }
 
-private fun resolveWeatherIcon(iconType: WeatherIconType?): ImageVector {
+internal fun resolveWeatherIcon(iconType: WeatherIconType?): ImageVector {
     return when (iconType) {
         WeatherIconType.CLEAR_DAY -> Icons.Outlined.WbSunny
         WeatherIconType.CLEAR_NIGHT -> Icons.Outlined.NightsStay
