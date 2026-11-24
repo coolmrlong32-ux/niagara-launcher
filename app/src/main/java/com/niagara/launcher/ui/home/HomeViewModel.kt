@@ -76,6 +76,7 @@ class HomeViewModel(
                             isLoading = observed.isLoading,
                             listEntries = observed.processed.listBuildResult.entries,
                             favorites = observed.processed.favorites,
+                            desktopApps = observed.processed.desktopApps,
                             allApps = observed.processed.visibleApps,
                             hiddenApps = observed.processed.hiddenApps,
                             appsByLetter = observed.processed.grouped,
@@ -97,25 +98,56 @@ class HomeViewModel(
     ): ProcessedAppsResult {
         val appMap = allApps.associateBy { it.key }
         val favoriteKeySet = prefs.favoriteKeys.toSet()
+        val desktopKeySet = prefs.desktopAppKeys.toSet()
 
         // Favorites exclude hidden apps so hiding a favorite removes it cleanly from pinned area
         val favorites = prefs.favoriteKeys.mapNotNull { key ->
             if (prefs.hiddenKeys.contains(key)) {
                 null
             } else {
-                appMap[key]?.copy(isFavorite = true, isHidden = false)
+                appMap[key]?.copy(
+                    isFavorite = true,
+                    isHidden = false,
+                    isOnDesktop = desktopKeySet.contains(key)
+                )
             }
         }
+
+        // Desktop apps exclude hidden apps and respect the 4x6 grid cap
+        val desktopApps = prefs.desktopAppKeys
+            .asSequence()
+            .filterNot { prefs.hiddenKeys.contains(it) }
+            .mapNotNull { key ->
+                appMap[key]?.copy(
+                    isFavorite = favoriteKeySet.contains(key),
+                    isHidden = false,
+                    isOnDesktop = true
+                )
+            }
+            .take(LauncherPreferences.MAX_DESKTOP_APPS)
+            .toList()
 
         // Visible apps excluding hidden ones
         val visibleApps = allApps
             .filterNot { prefs.hiddenKeys.contains(it.key) }
-            .map { it.copy(isFavorite = favoriteKeySet.contains(it.key), isHidden = false) }
+            .map {
+                it.copy(
+                    isFavorite = favoriteKeySet.contains(it.key),
+                    isHidden = false,
+                    isOnDesktop = desktopKeySet.contains(it.key)
+                )
+            }
 
         // Hidden apps sorted alphabetically for management sheet & search fallback
         val hiddenApps = allApps
             .filter { prefs.hiddenKeys.contains(it.key) }
-            .map { it.copy(isFavorite = favoriteKeySet.contains(it.key), isHidden = true) }
+            .map {
+                it.copy(
+                    isFavorite = favoriteKeySet.contains(it.key),
+                    isHidden = true,
+                    isOnDesktop = desktopKeySet.contains(it.key)
+                )
+            }
 
         val grouped = visibleApps.groupBy { it.firstLetter }
         val listBuildResult = HomeListModel.build(
@@ -125,6 +157,7 @@ class HomeViewModel(
 
         return ProcessedAppsResult(
             favorites = favorites,
+            desktopApps = desktopApps,
             visibleApps = visibleApps,
             hiddenApps = hiddenApps,
             grouped = grouped,
@@ -135,6 +168,7 @@ class HomeViewModel(
 
     private data class ProcessedAppsResult(
         val favorites: List<AppItem>,
+        val desktopApps: List<AppItem>,
         val visibleApps: List<AppItem>,
         val hiddenApps: List<AppItem>,
         val grouped: Map<Char, List<AppItem>>,
@@ -176,6 +210,18 @@ class HomeViewModel(
         _uiState.update { it.copy(selectedAppForMenu = null) }
     }
 
+    fun setHomeEditMode(enabled: Boolean) {
+        _uiState.update { it.copy(isHomeEditMode = enabled) }
+    }
+
+    fun openAppPicker(mode: AppPickerMode) {
+        _uiState.update { it.copy(appPickerMode = mode) }
+    }
+
+    fun closeAppPicker() {
+        _uiState.update { it.copy(appPickerMode = null) }
+    }
+
     fun openSettings() {
         _uiState.update { it.copy(isSettingsSheetVisible = true) }
     }
@@ -191,6 +237,42 @@ class HomeViewModel(
     fun toggleFavorite(app: AppItem) {
         viewModelScope.launch {
             preferencesRepository.toggleFavorite(app.key)
+        }
+    }
+
+    fun addFavorite(app: AppItem) {
+        viewModelScope.launch {
+            preferencesRepository.addFavorite(app.key)
+        }
+    }
+
+    fun removeFavorite(app: AppItem) {
+        viewModelScope.launch {
+            preferencesRepository.removeFavorite(app.key)
+        }
+    }
+
+    fun toggleDesktopApp(app: AppItem) {
+        viewModelScope.launch {
+            val applied = preferencesRepository.toggleDesktopApp(app.key)
+            if (!applied) {
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.DesktopFull(LauncherPreferences.MAX_DESKTOP_APPS))
+            }
+        }
+    }
+
+    fun addDesktopApp(app: AppItem) {
+        viewModelScope.launch {
+            val applied = preferencesRepository.addDesktopApp(app.key)
+            if (!applied) {
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.DesktopFull(LauncherPreferences.MAX_DESKTOP_APPS))
+            }
+        }
+    }
+
+    fun removeDesktopApp(app: AppItem) {
+        viewModelScope.launch {
+            preferencesRepository.removeDesktopApp(app.key)
         }
     }
 
@@ -261,4 +343,5 @@ class HomeViewModel(
 
 sealed interface HomeSnackbarEvent {
     data class AppHidden(val app: AppItem) : HomeSnackbarEvent
+    data class DesktopFull(val maxCount: Int) : HomeSnackbarEvent
 }

@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,11 +93,12 @@ fun AppListItem(
 @Composable
 fun AppIcon(
     app: AppItem,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(10.dp)
 ) {
     val iconCache = LocalAppIconCache.current
     val density = LocalDensity.current
-    val targetSizePx = remember(density) { with(density) { 48.dp.roundToPx() } }
+    val targetSizePx = remember(density) { with(density) { 64.dp.roundToPx() } }
 
     var bitmap by remember(app.key, iconCache) {
         mutableStateOf(iconCache?.getCached(app.key))
@@ -113,7 +116,7 @@ fun AppIcon(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(shape)
             .background(if (bitmap == null) Color.White.copy(alpha = 0.08f) else Color.Transparent),
         contentAlignment = Alignment.Center
     ) {
@@ -121,6 +124,7 @@ fun AppIcon(
             Image(
                 bitmap = loadedBitmap,
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
         }

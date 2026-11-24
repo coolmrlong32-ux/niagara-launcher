@@ -1,6 +1,7 @@
 package com.niagara.launcher.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
@@ -34,17 +37,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.ui.home.components.AlphabetWaveBar
 import com.niagara.launcher.ui.home.components.AppActionBottomSheet
 import com.niagara.launcher.ui.home.components.AppListItem
+import com.niagara.launcher.ui.home.components.AppPickerBottomSheet
 import com.niagara.launcher.ui.home.components.GlanceWidget
+import com.niagara.launcher.ui.home.components.IosHomePage
+import com.niagara.launcher.ui.home.components.IosPageIndicator
 import com.niagara.launcher.ui.home.components.LauncherSettingsBottomSheet
 import com.niagara.launcher.ui.search.SearchOverlay
 import kotlinx.coroutines.launch
 
 /**
- * Main Home screen combining Glance widget, favorites, A-Z drawer, and Alphabet Wave bar.
+ * Main Home screen with horizontal paging between the iOS-style Home page (page 0)
+ * and the Niagara A-Z App Drawer (page 1), accompanied by an iOS Page Indicator.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
@@ -52,10 +61,18 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Observe transient UI feedback events (e.g. Undo hide app)
+    // Exit desktop edit mode automatically when swiping away from page 0
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != 0 && uiState.isHomeEditMode) {
+            viewModel.setHomeEditMode(false)
+        }
+    }
+
+    // Observe transient UI feedback events (e.g. Undo hide app, Desktop full)
     LaunchedEffect(viewModel) {
         viewModel.snackbarEvents.collect { event ->
             when (event) {
@@ -69,6 +86,13 @@ fun HomeScreen(
                         viewModel.unhideApp(event.app)
                     }
                 }
+
+                is HomeSnackbarEvent.DesktopFull -> {
+                    snackbarHostState.showSnackbar(
+                        message = "桌面已满（最多 ${event.maxCount} 个应用）",
+                        duration = SnackbarDuration.Short
+                    )
+                }
             }
         }
     }
@@ -81,13 +105,25 @@ fun HomeScreen(
         }
     }
 
-    // Handle system back button
-    BackHandler(enabled = uiState.isSearching || listState.firstVisibleItemIndex > 0) {
-        if (uiState.isSearching) {
-            viewModel.setSearching(false)
-        } else {
-            coroutineScope.launch {
-                listState.animateScrollToItem(0)
+    // Handle system back button in priority order: Search -> Edit Mode -> Drawer Scroll -> Home Page
+    BackHandler(
+        enabled = uiState.isSearching ||
+            uiState.isHomeEditMode ||
+            pagerState.currentPage != 0 ||
+            listState.firstVisibleItemIndex > 0
+    ) {
+        when {
+            uiState.isSearching -> viewModel.setSearching(false)
+            uiState.isHomeEditMode -> viewModel.setHomeEditMode(false)
+            pagerState.currentPage == 1 && listState.firstVisibleItemIndex > 0 -> {
+                coroutineScope.launch {
+                    listState.animateScrollToItem(0)
+                }
+            }
+            pagerState.currentPage != 0 -> {
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(0)
+                }
             }
         }
     }
@@ -119,115 +155,160 @@ fun HomeScreen(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-            ) {
-                // If left-handed mode is preferred, place alphabet bar on left
-                if (!uiState.preferences.isRightHanded) {
-                    AlphabetWaveBar(
-                        isRightHanded = false,
-                        hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
-                        availableLetters = uiState.availableLetters,
-                        activeLetter = activeSectionLetter,
-                        onLetterSelected = onLetterSelected
-                    )
-                }
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = !uiState.isSearching,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
+                    0 -> {
+                        IosHomePage(
+                            favorites = uiState.favorites,
+                            desktopApps = uiState.desktopApps,
+                            isEditMode = uiState.isHomeEditMode,
+                            showBattery = uiState.preferences.showBatteryInGlance,
+                            onLaunchApp = { viewModel.launchApp(it) },
+                            onEnterEditMode = { viewModel.setHomeEditMode(true) },
+                            onExitEditMode = { viewModel.setHomeEditMode(false) },
+                            onRemoveFavorite = { viewModel.removeFavorite(it) },
+                            onRemoveDesktopApp = { viewModel.removeDesktopApp(it) },
+                            onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
+                            onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
+                            onSearchClick = { viewModel.setSearching(true) },
+                            onSettingsClick = { viewModel.openSettings() }
+                        )
+                    }
 
-                // Single-source-of-truth LazyColumn driven by uiState.listEntries
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
-                ) {
-                    items(
-                        items = uiState.listEntries,
-                        key = { it.listKey },
-                        contentType = { entry ->
-                            when (entry) {
-                                HomeListEntry.Glance -> "glance"
-                                HomeListEntry.FavoritesHeader -> "fav_header"
-                                is HomeListEntry.FavoriteApp -> "app_item"
-                                HomeListEntry.FavoritesDivider -> "divider"
-                                is HomeListEntry.LetterHeader -> "letter_header"
-                                is HomeListEntry.DrawerApp -> "app_item"
-                                HomeListEntry.BottomSpacer -> "spacer"
-                            }
-                        }
-                    ) { entry ->
-                        when (entry) {
-                            HomeListEntry.Glance -> {
-                                GlanceWidget(
-                                    showBattery = uiState.preferences.showBatteryInGlance,
-                                    onSearchClick = { viewModel.setSearching(true) },
-                                    onSettingsClick = { viewModel.openSettings() }
+                    else -> {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .navigationBarsPadding()
+                        ) {
+                            // If left-handed mode is preferred, place alphabet bar on left
+                            if (!uiState.preferences.isRightHanded) {
+                                AlphabetWaveBar(
+                                    isRightHanded = false,
+                                    hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
+                                    availableLetters = uiState.availableLetters,
+                                    activeLetter = activeSectionLetter,
+                                    onLetterSelected = onLetterSelected
                                 )
                             }
 
-                            HomeListEntry.FavoritesHeader -> {
-                                Text(
-                                    text = "常用",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp
-                                    ),
-                                    modifier = Modifier.padding(start = 24.dp, top = 8.dp, bottom = 4.dp)
+                            // Single-source-of-truth LazyColumn driven by uiState.listEntries
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                            ) {
+                                items(
+                                    items = uiState.listEntries,
+                                    key = { it.listKey },
+                                    contentType = { entry ->
+                                        when (entry) {
+                                            HomeListEntry.Glance -> "glance"
+                                            HomeListEntry.FavoritesHeader -> "fav_header"
+                                            is HomeListEntry.FavoriteApp -> "app_item"
+                                            HomeListEntry.FavoritesDivider -> "divider"
+                                            is HomeListEntry.LetterHeader -> "letter_header"
+                                            is HomeListEntry.DrawerApp -> "app_item"
+                                            HomeListEntry.BottomSpacer -> "spacer"
+                                        }
+                                    }
+                                ) { entry ->
+                                    when (entry) {
+                                        HomeListEntry.Glance -> {
+                                            GlanceWidget(
+                                                showBattery = uiState.preferences.showBatteryInGlance,
+                                                onSearchClick = { viewModel.setSearching(true) },
+                                                onSettingsClick = { viewModel.openSettings() }
+                                            )
+                                        }
+
+                                        HomeListEntry.FavoritesHeader -> {
+                                            Text(
+                                                text = "常用",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    color = Color.White.copy(alpha = 0.5f),
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 12.sp
+                                                ),
+                                                modifier = Modifier.padding(start = 24.dp, top = 8.dp, bottom = 4.dp)
+                                            )
+                                        }
+
+                                        is HomeListEntry.FavoriteApp -> {
+                                            AppListItem(
+                                                app = entry.app,
+                                                onClick = { viewModel.launchApp(entry.app) },
+                                                onLongClick = { viewModel.openAppMenu(entry.app) }
+                                            )
+                                        }
+
+                                        HomeListEntry.FavoritesDivider -> {
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                        }
+
+                                        is HomeListEntry.LetterHeader -> {
+                                            Text(
+                                                text = entry.letter.toString(),
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                ),
+                                                modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
+                                            )
+                                        }
+
+                                        is HomeListEntry.DrawerApp -> {
+                                            AppListItem(
+                                                app = entry.app,
+                                                onClick = { viewModel.launchApp(entry.app) },
+                                                onLongClick = { viewModel.openAppMenu(entry.app) }
+                                            )
+                                        }
+
+                                        HomeListEntry.BottomSpacer -> {
+                                            Spacer(modifier = Modifier.height(84.dp))
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If right-handed mode (default), place alphabet bar on right
+                            if (uiState.preferences.isRightHanded) {
+                                AlphabetWaveBar(
+                                    isRightHanded = true,
+                                    hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
+                                    availableLetters = uiState.availableLetters,
+                                    activeLetter = activeSectionLetter,
+                                    onLetterSelected = onLetterSelected
                                 )
-                            }
-
-                            is HomeListEntry.FavoriteApp -> {
-                                AppListItem(
-                                    app = entry.app,
-                                    onClick = { viewModel.launchApp(entry.app) },
-                                    onLongClick = { viewModel.openAppMenu(entry.app) }
-                                )
-                            }
-
-                            HomeListEntry.FavoritesDivider -> {
-                                Spacer(modifier = Modifier.height(16.dp))
-                            }
-
-                            is HomeListEntry.LetterHeader -> {
-                                Text(
-                                    text = entry.letter.toString(),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    ),
-                                    modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
-                                )
-                            }
-
-                            is HomeListEntry.DrawerApp -> {
-                                AppListItem(
-                                    app = entry.app,
-                                    onClick = { viewModel.launchApp(entry.app) },
-                                    onLongClick = { viewModel.openAppMenu(entry.app) }
-                                )
-                            }
-
-                            HomeListEntry.BottomSpacer -> {
-                                Spacer(modifier = Modifier.height(64.dp))
                             }
                         }
                     }
                 }
+            }
 
-                // If right-handed mode (default), place alphabet bar on right
-                if (uiState.preferences.isRightHanded) {
-                    AlphabetWaveBar(
-                        isRightHanded = true,
-                        hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
-                        availableLetters = uiState.availableLetters,
-                        activeLetter = activeSectionLetter,
-                        onLetterSelected = onLetterSelected
-                    )
-                }
+            // Bottom iOS-style Page Indicator (hidden while full-screen Search is open)
+            if (!uiState.isSearching) {
+                IosPageIndicator(
+                    pageCount = 2,
+                    currentPage = pagerState.currentPage,
+                    onPageSelected = { targetPage ->
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(targetPage)
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 10.dp)
+                )
             }
         }
 
@@ -237,7 +318,7 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(start = 16.dp, end = 16.dp, bottom = 56.dp)
         )
 
         // Search Overlay
@@ -271,10 +352,38 @@ fun HomeScreen(
                 onToggleFavorite = { viewModel.toggleFavorite(it) },
                 onMoveFavoriteUp = { viewModel.moveFavoriteUp(it) },
                 onMoveFavoriteDown = { viewModel.moveFavoriteDown(it) },
+                onToggleDesktop = { viewModel.toggleDesktopApp(it) },
                 onToggleHidden = { viewModel.toggleHidden(it) },
                 onOpenDetails = { viewModel.openAppDetails(it) },
                 onUninstall = { viewModel.uninstallApp(it) }
             )
+        }
+
+        // Multi-select Picker for Favorites or 4x6 Desktop Grid
+        uiState.appPickerMode?.let { pickerMode ->
+            when (pickerMode) {
+                AppPickerMode.FAVORITES -> {
+                    AppPickerBottomSheet(
+                        mode = pickerMode,
+                        allApps = uiState.allApps,
+                        selectedKeys = uiState.favorites.map { it.key }.toSet(),
+                        maxSelection = null,
+                        onToggleApp = { viewModel.toggleFavorite(it) },
+                        onDismissRequest = { viewModel.closeAppPicker() }
+                    )
+                }
+
+                AppPickerMode.DESKTOP -> {
+                    AppPickerBottomSheet(
+                        mode = pickerMode,
+                        allApps = uiState.allApps,
+                        selectedKeys = uiState.desktopApps.map { it.key }.toSet(),
+                        maxSelection = LauncherPreferences.MAX_DESKTOP_APPS,
+                        onToggleApp = { viewModel.toggleDesktopApp(it) },
+                        onDismissRequest = { viewModel.closeAppPicker() }
+                    )
+                }
+            }
         }
 
         // Launcher Settings & Hidden Apps Management Sheet

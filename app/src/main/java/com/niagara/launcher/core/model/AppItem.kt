@@ -19,7 +19,8 @@ data class AppItem(
     val fullPinyin: String = "",
     val pinyinIndex: PinyinIndex = PinyinIndex(),
     val isFavorite: Boolean = false,
-    val isHidden: Boolean = false
+    val isHidden: Boolean = false,
+    val isOnDesktop: Boolean = false
 ) {
     /**
      * Unique identifier for the application component.

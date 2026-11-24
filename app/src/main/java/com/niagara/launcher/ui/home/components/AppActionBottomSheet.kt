@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Visibility
@@ -50,6 +52,7 @@ fun AppActionBottomSheet(
     onToggleFavorite: (AppItem) -> Unit,
     onMoveFavoriteUp: (AppItem) -> Unit = {},
     onMoveFavoriteDown: (AppItem) -> Unit = {},
+    onToggleDesktop: (AppItem) -> Unit = {},
     onToggleHidden: (AppItem) -> Unit,
     onOpenDetails: (AppItem) -> Unit,
     onUninstall: (AppItem) -> Unit
@@ -99,10 +102,20 @@ fun AppActionBottomSheet(
             // Action: Favorite / Unfavorite
             ActionRowItem(
                 icon = if (app.isFavorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
-                title = if (app.isFavorite) "取消收藏" else "设为收藏",
+                title = if (app.isFavorite) "从常用移除" else "添加到常用",
                 tint = if (app.isFavorite) Color(0xFFFFD54F) else Color.White,
                 onClick = {
                     onToggleFavorite(app)
+                    onDismissRequest()
+                }
+            )
+
+            // Action: Add / Remove from Home Desktop 4x6 grid
+            ActionRowItem(
+                icon = if (app.isOnDesktop) Icons.Outlined.RemoveCircleOutline else Icons.Outlined.GridView,
+                title = if (app.isOnDesktop) "从首页桌面移除" else "添加到首页桌面",
+                onClick = {
+                    onToggleDesktop(app)
                     onDismissRequest()
                 }
             )
