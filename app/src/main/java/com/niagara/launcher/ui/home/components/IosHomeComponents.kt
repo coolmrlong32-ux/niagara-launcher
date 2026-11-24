@@ -18,6 +18,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -665,6 +666,10 @@ fun ReorderableIosAppGrid(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(gridHeightDp)
+                .pointerInput(Unit) {
+                    // Absorb missed taps in narrow 4-8dp gaps between icons so they never trigger empty-space double-tap lock
+                    detectTapGestures(onTap = {})
+                }
         ) {
             // Subtle frosted placeholder indicating the target drop slot underneath the lifted icon
             val draggedIndex = draggingKey?.let { key ->

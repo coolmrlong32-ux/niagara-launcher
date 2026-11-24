@@ -528,6 +528,20 @@ class HomeViewModel(
         }
     }
 
+    fun setDoubleTapToLockEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setDoubleTapToLockEnabled(enabled)
+        }
+    }
+
+    fun openScreenLockGuide() {
+        _uiState.update { it.copy(isScreenLockGuideVisible = true) }
+    }
+
+    fun closeScreenLockGuide() {
+        _uiState.update { it.copy(isScreenLockGuideVisible = false) }
+    }
+
     fun setIconStyle(style: IconStyle) {
         viewModelScope.launch {
             preferencesRepository.setIconStyle(style)

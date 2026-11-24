@@ -62,6 +62,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.niagara.launcher.core.data.LocalIconAppearance
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.system.ScreenLockController
+import com.niagara.launcher.core.system.ScreenLockResult
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import com.niagara.launcher.core.transition.LaunchSourceBounds
 import com.niagara.launcher.ui.home.components.AlphabetWaveBar
@@ -76,6 +78,7 @@ import com.niagara.launcher.ui.home.components.InvisibleLeftAlphabetHotspot
 import com.niagara.launcher.ui.home.components.IosHomePage
 import com.niagara.launcher.ui.home.components.IosPageIndicator
 import com.niagara.launcher.ui.home.components.LauncherSettingsBottomSheet
+import com.niagara.launcher.ui.home.components.ScreenLockGuideDialog
 import com.niagara.launcher.ui.home.components.WeatherConfigDialog
 import com.niagara.launcher.ui.home.components.rememberForegroundDeviceStatus
 import com.niagara.launcher.ui.search.SearchOverlay
@@ -234,9 +237,10 @@ fun HomeScreen(
         }
     }
 
-    // Handle system back button in priority order: Icon Picker -> Desktop Settings -> Search -> Edit Mode -> Drawer Scroll -> Home Page
+    // Handle system back button in priority order: Lock Guide -> Icon Picker -> Desktop Settings -> Search -> Edit Mode -> Drawer Scroll -> Home Page
     BackHandler(
-        enabled = uiState.isIconPickerVisible ||
+        enabled = uiState.isScreenLockGuideVisible ||
+            uiState.isIconPickerVisible ||
             uiState.isDesktopSettingsVisible ||
             uiState.isSearching ||
             uiState.isHomeEditMode ||
@@ -244,6 +248,7 @@ fun HomeScreen(
             listState.firstVisibleItemIndex > 0
     ) {
         when {
+            uiState.isScreenLockGuideVisible -> viewModel.closeScreenLockGuide()
             uiState.isIconPickerVisible -> viewModel.closeIconPicker()
             uiState.isDesktopSettingsVisible -> viewModel.closeDesktopSettings()
             uiState.isSearching -> viewModel.setSearching(false)
@@ -258,6 +263,24 @@ fun HomeScreen(
                     pagerState.animateScrollToPage(0)
                 }
             }
+        }
+    }
+
+    val isOverlayBlocking = uiState.isScreenLockGuideVisible ||
+        uiState.isSearching ||
+        uiState.isDesktopMenuVisible ||
+        uiState.isDesktopSettingsVisible ||
+        uiState.isIconPickerVisible ||
+        uiState.isSettingsSheetVisible ||
+        uiState.appPickerMode != null ||
+        uiState.selectedAppForMenu != null ||
+        uiState.isWeatherConfigDialogVisible
+
+    val onDoubleTapLock: () -> Unit = {
+        when (ScreenLockController.tryLockScreen(context)) {
+            ScreenLockResult.LOCKED -> Unit
+            ScreenLockResult.PERMISSION_REQUIRED,
+            ScreenLockResult.UNSUPPORTED -> viewModel.openScreenLockGuide()
         }
     }
 
@@ -336,7 +359,9 @@ fun HomeScreen(
                                     onDraggingChanged = { isHomeIconDragging = it },
                                     onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
                                     onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
-                                    onSearchClick = { viewModel.setSearching(true) }
+                                    onSearchClick = { viewModel.setSearching(true) },
+                                    isOverlayBlocking = isOverlayBlocking,
+                                    onDoubleTapLock = onDoubleTapLock
                                 )
                             }
 
@@ -573,6 +598,8 @@ fun HomeScreen(
                     onShowBatteryChange = { viewModel.setShowBatteryInGlance(it) },
                     onShowDeviceStatusChange = { viewModel.setShowDeviceStatusInGlance(it) },
                     onShowWeatherChange = { viewModel.setShowWeatherInGlance(it) },
+                    onDoubleTapToLockChange = { viewModel.setDoubleTapToLockEnabled(it) },
+                    onOpenScreenLockGuide = { viewModel.openScreenLockGuide() },
                     onConfigureWeatherClick = {
                         viewModel.closeSettings()
                         viewModel.openWeatherConfigDialog()
@@ -612,6 +639,8 @@ fun HomeScreen(
                     onGridColumnsChange = { viewModel.setDesktopGridColumns(it) },
                     onShowAppLabelsChange = { viewModel.setShowAppLabels(it) },
                     onShowFavoritesBarChange = { viewModel.setShowFavoritesBar(it) },
+                    onDoubleTapToLockChange = { viewModel.setDoubleTapToLockEnabled(it) },
+                    onOpenScreenLockGuide = { viewModel.openScreenLockGuide() },
                     onOpenIconPicker = { viewModel.openIconPicker() },
                     onEnterEditMode = {
                         viewModel.closeDesktopSettings()
@@ -638,6 +667,13 @@ fun HomeScreen(
                     onRefreshIconPacks = { viewModel.refreshIconPacks() },
                     onBack = { viewModel.closeIconPicker() },
                     onDone = { viewModel.closeAllDesktopOverlays() }
+                )
+            }
+
+            // Guided Setup Dialog for Double-Tap Screen Lock
+            if (uiState.isScreenLockGuideVisible) {
+                ScreenLockGuideDialog(
+                    onDismiss = { viewModel.closeScreenLockGuide() }
                 )
             }
         }

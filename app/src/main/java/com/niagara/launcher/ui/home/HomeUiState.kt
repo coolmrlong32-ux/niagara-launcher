@@ -38,5 +38,6 @@ data class HomeUiState(
     val isWeatherRefreshing: Boolean = false,
     val weatherErrorMessage: String? = null,
     val isWeatherConfigDialogVisible: Boolean = false,
+    val isScreenLockGuideVisible: Boolean = false,
     val preferences: LauncherPreferences = LauncherPreferences()
 )

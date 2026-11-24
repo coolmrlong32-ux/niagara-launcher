@@ -149,6 +149,7 @@ class PreferencesRepository internal constructor(
         val SHOW_FAVORITES_BAR = booleanPreferencesKey("show_favorites_bar")
         val ICON_STYLE = stringPreferencesKey("icon_style")
         val ICON_PACK_PACKAGE = stringPreferencesKey("icon_pack_package")
+        val DOUBLE_TAP_TO_LOCK = booleanPreferencesKey("double_tap_to_lock_enabled")
     }
 
     val launcherPreferencesFlow: Flow<LauncherPreferences> = dataStore.data.map { preferences ->
@@ -196,6 +197,7 @@ class PreferencesRepository internal constructor(
         val iconPackPackage = preferences[PreferencesKeys.ICON_PACK_PACKAGE]
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+        val doubleTapToLockEnabled = preferences[PreferencesKeys.DOUBLE_TAP_TO_LOCK] ?: true
 
         LauncherPreferences(
             favoriteKeys = favoriteList,
@@ -214,7 +216,8 @@ class PreferencesRepository internal constructor(
             showAppLabels = showAppLabels,
             showFavoritesBar = showFavoritesBar,
             iconStyle = iconStyle,
-            iconPackPackage = iconPackPackage
+            iconPackPackage = iconPackPackage,
+            doubleTapToLockEnabled = doubleTapToLockEnabled
         )
     }
 
@@ -480,6 +483,12 @@ class PreferencesRepository internal constructor(
             } else {
                 preferences[PreferencesKeys.ICON_PACK_PACKAGE] = normalized
             }
+        }
+    }
+
+    suspend fun setDoubleTapToLockEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DOUBLE_TAP_TO_LOCK] = enabled
         }
     }
 }

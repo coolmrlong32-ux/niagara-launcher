@@ -11,4 +11,8 @@
     <string name="action_app_info">应用信息</string>
     <string name="action_uninstall">卸载应用</string>
     <string name="alphabet">ABCDEFGHIJKLMNOPQRSTUVWXYZ#</string>
+    <string name="accessibility_lock_screen_label">Niagara Launcher 双击熄屏</string>
+    <string name="accessibility_lock_screen_desc">仅用于在桌面空白区域双击时执行系统锁屏动作，不读取任何屏幕内容或输入记录。</string>
+    <string name="device_admin_lock_label">Niagara Launcher 锁屏管理</string>
+    <string name="device_admin_lock_desc">仅用于在桌面空白区域双击时锁定屏幕。</string>
 </resources>

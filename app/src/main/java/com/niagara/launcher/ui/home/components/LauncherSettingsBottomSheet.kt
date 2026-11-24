@@ -18,7 +18,9 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Swipe
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.Visibility
@@ -59,11 +61,14 @@ fun LauncherSettingsBottomSheet(
     onShowBatteryChange: (Boolean) -> Unit,
     onShowDeviceStatusChange: (Boolean) -> Unit = {},
     onShowWeatherChange: (Boolean) -> Unit = {},
+    onDoubleTapToLockChange: (Boolean) -> Unit = {},
+    onOpenScreenLockGuide: (() -> Unit)? = null,
     onConfigureWeatherClick: (() -> Unit)? = null,
     onUnhideApp: (AppItem) -> Unit,
     onOpenDesktopSettings: (() -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val lockStatus = rememberScreenLockPermissionStatus()
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -159,6 +164,69 @@ fun LauncherSettingsBottomSheet(
                 checked = preferences.hapticFeedbackEnabled,
                 onCheckedChange = onHapticFeedbackChange
             )
+
+            SettingSwitchRow(
+                icon = Icons.Outlined.Lock,
+                title = "双击空白区域熄屏",
+                subtitle = "仅在空白区域触发，带防误触与间隔校验",
+                checked = preferences.doubleTapToLockEnabled,
+                onCheckedChange = onDoubleTapToLockChange
+            )
+
+            if (onOpenScreenLockGuide != null) {
+                Surface(
+                    onClick = {
+                        onDismissRequest()
+                        onOpenScreenLockGuide()
+                    },
+                    color = Color.White.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp, bottom = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Security,
+                            contentDescription = "锁屏权限引导",
+                            tint = if (lockStatus.hasAnyPermission) Color(0xFF63E2A0) else Color(0xFFFFB86B),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "熄屏权限配置与引导",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            )
+                            Text(
+                                text = when {
+                                    lockStatus.accessibilityEnabled -> "已授权无障碍锁屏（支持指纹解锁）"
+                                    lockStatus.deviceAdminEnabled -> "已授权设备管理器锁屏"
+                                    else -> "尚未授权 · 点击查看无障碍开启引导"
+                                },
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color.White.copy(alpha = 0.58f),
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.55f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
 
             SettingSwitchRow(
                 icon = Icons.Outlined.BatteryFull,

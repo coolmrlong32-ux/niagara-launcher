@@ -1,13 +1,12 @@
 package com.niagara.launcher.ui.home.components
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,19 +32,25 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.niagara.launcher.core.gesture.DoubleTapLockGuard
+import com.niagara.launcher.core.gesture.TapOutcome
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.DeviceStatusSnapshot
 import com.niagara.launcher.core.model.LauncherPreferences
@@ -53,11 +58,9 @@ import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import com.niagara.launcher.core.transition.LaunchSourceBounds
 
 /**
- * Independent iOS-style Home page featuring a refined translucent Glance header
- * (time, weather, real-time RAM & battery temperature), Frosted Glass Favorites Card,
- * and configurable 4x6 / 5x6 drag-reorderable Desktop App Grid.
+ * Independent iOS-style Home page featuring a refined translucent Glance header,
+ * Frosted Glass Favorites Card, and configurable 4x6 / 5x6 drag-reorderable Desktop App Grid.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun IosHomePage(
     favorites: List<AppItem>,
@@ -81,35 +84,75 @@ fun IosHomePage(
     onOpenFavoritesPicker: () -> Unit,
     onOpenDesktopPicker: () -> Unit,
     onSearchClick: () -> Unit,
+    isOverlayBlocking: Boolean = false,
+    onDoubleTapLock: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
     val scrollState = rememberScrollState()
     var isGridDragging by remember { mutableStateOf(false) }
+    val doubleTapGuard = remember { DoubleTapLockGuard() }
+    val maxTapDistancePx = with(density) { 28.dp.toPx() }
+
+    LaunchedEffect(isEditMode, isGridDragging, isOverlayBlocking) {
+        if (isEditMode || isGridDragging || isOverlayBlocking) {
+            doubleTapGuard.reset()
+        }
+    }
+
+    val latestIsEditMode by rememberUpdatedState(isEditMode)
+    val latestIsGridDragging by rememberUpdatedState(isGridDragging)
+    val latestIsOverlayBlocking by rememberUpdatedState(isOverlayBlocking)
+    val latestDoubleTapLockEnabled by rememberUpdatedState(preferences.doubleTapToLockEnabled)
+    val latestOnExitEditMode by rememberUpdatedState(onExitEditMode)
+    val latestOnOpenDesktopMenu by rememberUpdatedState(onOpenDesktopMenu)
+    val latestOnDoubleTapLock by rememberUpdatedState(onDoubleTapLock)
 
     val handleDraggingChanged: (Boolean) -> Unit = { dragging ->
+        if (dragging) doubleTapGuard.reset()
         isGridDragging = dragging
         onDraggingChanged(dragging)
+    }
+
+    val guardedLaunchApp: (AppItem, LaunchSourceBounds?) -> Unit = { app, bounds ->
+        doubleTapGuard.reset()
+        onLaunchApp(app, bounds)
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {
-                    if (isEditMode) {
-                        onExitEditMode()
+            .pointerInput(maxTapDistancePx) {
+                detectTapGestures(
+                    onTap = { offset ->
+                        if (latestIsEditMode) {
+                            doubleTapGuard.reset()
+                            latestOnExitEditMode()
+                        } else {
+                            val outcome = doubleTapGuard.onEmptySpaceTap(
+                                x = offset.x,
+                                y = offset.y,
+                                maxDistancePx = maxTapDistancePx,
+                                nowMs = SystemClock.uptimeMillis(),
+                                enabled = latestDoubleTapLockEnabled,
+                                isBlockedByMode = latestIsEditMode || latestIsGridDragging || latestIsOverlayBlocking
+                            )
+                            if (outcome == TapOutcome.DOUBLE_TAP_LOCK) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                latestOnDoubleTapLock()
+                            }
+                        }
+                    },
+                    onLongPress = {
+                        doubleTapGuard.reset()
+                        if (!latestIsEditMode && !latestIsGridDragging && !latestIsOverlayBlocking) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            latestOnOpenDesktopMenu()
+                        }
                     }
-                },
-                onLongClick = {
-                    if (!isEditMode && !isGridDragging) {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onOpenDesktopMenu()
-                    }
-                }
-            )
+                )
+            }
     ) {
         Column(
             modifier = Modifier
@@ -124,18 +167,36 @@ fun IosHomePage(
                 IosEditModeHeader(
                     desktopCount = desktopApps.size,
                     maxDesktopCount = preferences.maxDesktopApps,
-                    onAddClick = onOpenDesktopPicker,
-                    onDoneClick = onExitEditMode
+                    onAddClick = {
+                        doubleTapGuard.reset()
+                        onOpenDesktopPicker()
+                    },
+                    onDoneClick = {
+                        doubleTapGuard.reset()
+                        onExitEditMode()
+                    }
                 )
             } else {
                 IosNormalHeader(
                     preferences = preferences,
                     deviceStatus = deviceStatus,
                     isWeatherRefreshing = isWeatherRefreshing,
-                    onWeatherClick = onWeatherClick,
-                    onWeatherLongClick = onWeatherLongClick,
-                    onSearchClick = onSearchClick,
-                    onSettingsClick = onOpenDesktopSettings
+                    onWeatherClick = {
+                        doubleTapGuard.reset()
+                        onWeatherClick()
+                    },
+                    onWeatherLongClick = {
+                        doubleTapGuard.reset()
+                        onWeatherLongClick()
+                    },
+                    onSearchClick = {
+                        doubleTapGuard.reset()
+                        onSearchClick()
+                    },
+                    onSettingsClick = {
+                        doubleTapGuard.reset()
+                        onOpenDesktopSettings()
+                    }
                 )
             }
 
@@ -150,10 +211,16 @@ fun IosHomePage(
                     IosFavoritesCard(
                         favorites = favorites,
                         isEditMode = isEditMode,
-                        onLaunchApp = onLaunchApp,
-                        onEnterEditMode = onEnterEditMode,
+                        onLaunchApp = guardedLaunchApp,
+                        onEnterEditMode = {
+                            doubleTapGuard.reset()
+                            onEnterEditMode()
+                        },
                         onRemoveFavorite = onRemoveFavorite,
-                        onOpenFavoritesPicker = onOpenFavoritesPicker,
+                        onOpenFavoritesPicker = {
+                            doubleTapGuard.reset()
+                            onOpenFavoritesPicker()
+                        },
                         onReorderFavorites = onReorderFavorites,
                         onDraggingChanged = handleDraggingChanged,
                         gridColumns = preferences.desktopGridColumns,
@@ -169,11 +236,20 @@ fun IosHomePage(
             IosDesktopGrid(
                 desktopApps = desktopApps,
                 isEditMode = isEditMode,
-                onLaunchApp = onLaunchApp,
-                onEnterEditMode = onEnterEditMode,
-                onOpenDesktopMenu = onOpenDesktopMenu,
+                onLaunchApp = guardedLaunchApp,
+                onEnterEditMode = {
+                    doubleTapGuard.reset()
+                    onEnterEditMode()
+                },
+                onOpenDesktopMenu = {
+                    doubleTapGuard.reset()
+                    onOpenDesktopMenu()
+                },
                 onRemoveDesktopApp = onRemoveDesktopApp,
-                onOpenDesktopPicker = onOpenDesktopPicker,
+                onOpenDesktopPicker = {
+                    doubleTapGuard.reset()
+                    onOpenDesktopPicker()
+                },
                 onReorderDesktopApps = onReorderDesktopApps,
                 onDraggingChanged = handleDraggingChanged,
                 gridColumns = preferences.desktopGridColumns,
