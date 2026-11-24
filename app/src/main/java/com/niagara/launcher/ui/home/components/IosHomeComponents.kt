@@ -99,6 +99,7 @@ import com.niagara.launcher.core.theme.IosPillShape
 import com.niagara.launcher.core.theme.IosRemoveBadgeBg
 import com.niagara.launcher.core.theme.IosRemoveBadgeIcon
 import com.niagara.launcher.core.theme.IosRoundedCardSquircleShape
+import com.niagara.launcher.core.theme.LauncherMotion
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import com.niagara.launcher.core.transition.LaunchBoundsRef
 import com.niagara.launcher.core.transition.LaunchSourceBounds
@@ -119,8 +120,19 @@ fun IosGlassPill(
     content: @Composable RowScope.() -> Unit
 ) {
     val visuals = LocalLauncherVisuals.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (onClick != null && isPressed) 0.96f else 1f,
+        animationSpec = LauncherMotion.SnappySpring,
+        label = "pillPressScale"
+    )
     val clickModifier = if (onClick != null) {
-        Modifier.clickable(onClick = onClick)
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
     } else {
         Modifier
     }
@@ -128,6 +140,10 @@ fun IosGlassPill(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(shape)
             .then(clickModifier)
             .background(visuals.pillTint)
@@ -137,9 +153,9 @@ fun IosGlassPill(
                 )
             )
             .border(
-                width = 0.6.dp,
+                width = 0.65.dp,
                 brush = Brush.verticalGradient(
-                    colors = listOf(visuals.pillBorder, Color.White.copy(alpha = 0.10f))
+                    colors = listOf(visuals.pillBorder, Color.White.copy(alpha = 0.12f))
                 ),
                 shape = shape
             )
@@ -150,7 +166,7 @@ fun IosGlassPill(
 
 /**
  * iOS-style frosted glass container card with layered translucent depth,
- * subtle diagonal sheen, and a crisp 0.7dp specular hairline rim.
+ * soft elevation, subtle diagonal sheen, and a crisp 0.75dp specular hairline rim.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -177,6 +193,12 @@ fun IosFrostedGlassCard(
 
     Box(
         modifier = modifier
+            .shadow(
+                elevation = 10.dp,
+                shape = cardShape,
+                ambientColor = visuals.cardShadowAmbient,
+                spotColor = visuals.cardShadowSpot
+            )
             .clip(cardShape)
             .then(interactiveModifier)
             .background(visuals.glassTint)
@@ -186,25 +208,24 @@ fun IosFrostedGlassCard(
                 )
             )
             .border(
-                width = 0.7.dp,
+                width = 0.75.dp,
                 brush = Brush.verticalGradient(
                     colors = listOf(visuals.glassBorderTop, visuals.glassBorderBottom)
                 ),
                 shape = cardShape
             )
     ) {
-        // Soft internal frosted light diffusion strictly behind foreground content
+        // Soft top-edge highlight + internal frosted light diffusion behind foreground content
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .blur(26.dp)
                 .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            IosGlassSheenStart,
-                            Color.Transparent,
-                            IosGlassSheenEnd
-                        )
+                    Brush.verticalGradient(
+                        0.0f to visuals.glassHighlightTop,
+                        0.28f to IosGlassSheenStart,
+                        0.72f to Color.Transparent,
+                        1.0f to IosGlassSheenEnd
                     )
                 )
         )
@@ -1137,19 +1158,27 @@ fun IosPageIndicator(
     onPageSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val visuals = LocalLauncherVisuals.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         modifier = modifier
+            .shadow(
+                elevation = 6.dp,
+                shape = CircleShape,
+                ambientColor = visuals.cardShadowAmbient,
+                spotColor = visuals.cardShadowSpot
+            )
             .clip(CircleShape)
             .background(IosPageIndicatorBg)
-            .border(0.6.dp, IosPageIndicatorBorder, CircleShape)
-            .padding(horizontal = 13.dp, vertical = 6.dp)
+            .border(0.65.dp, IosPageIndicatorBorder, CircleShape)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
         for (page in 0 until pageCount) {
             val isSelected = page == currentPage
             val dotWidth by animateDpAsState(
-                targetValue = if (isSelected) 16.dp else 6.dp,
+                targetValue = if (isSelected) 18.dp else 6.dp,
+                animationSpec = LauncherMotion.DpFluidSpring,
                 label = "dotWidth_$page"
             )
             val dotColor by animateColorAsState(

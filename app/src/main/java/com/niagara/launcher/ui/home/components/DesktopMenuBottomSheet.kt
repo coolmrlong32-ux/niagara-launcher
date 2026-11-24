@@ -84,9 +84,9 @@ fun DesktopMenuBottomSheet(
                 .padding(bottom = 12.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xF51C1C1E),
-                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.12f)),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xF5191A1F),
+                border = BorderStroke(0.65.dp, Color.White.copy(alpha = 0.16f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -172,9 +172,9 @@ fun DesktopMenuBottomSheet(
 
             Surface(
                 onClick = onDismissRequest,
-                shape = RoundedCornerShape(14.dp),
-                color = Color(0xF52C2C2E),
-                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.10f)),
+                shape = RoundedCornerShape(18.dp),
+                color = Color(0xF52A2B31),
+                border = BorderStroke(0.65.dp, Color.White.copy(alpha = 0.14f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)

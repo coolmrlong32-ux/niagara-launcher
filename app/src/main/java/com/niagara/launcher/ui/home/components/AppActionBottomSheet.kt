@@ -62,7 +62,8 @@ fun AppActionBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        containerColor = Color(0xFF1E1F24),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = Color(0xF7191A20),
         contentColor = Color.White
     ) {
         Column(

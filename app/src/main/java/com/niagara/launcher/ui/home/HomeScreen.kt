@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
@@ -90,11 +91,14 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     viewModel: HomeViewModel,
     returnToHomePulse: Int = 0,
+    openSettingsPulse: Int = 0,
+    returnToPageZeroPulse: Int = 0,
     onExternalAppLaunched: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val visuals = LocalLauncherVisuals.current
+    val context = LocalContext.current
     val hostView = LocalView.current
     val density = LocalDensity.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -166,8 +170,27 @@ fun HomeScreen(
             anchorView = hostView,
             sourceBounds = bounds
         )
-        if (launched) {
+        if (launched && app.packageName != context.packageName) {
             onExternalAppLaunched()
+        }
+    }
+
+    LaunchedEffect(openSettingsPulse) {
+        if (openSettingsPulse > 0) {
+            viewModel.closeAllDesktopOverlays()
+            viewModel.openDesktopSettings()
+        }
+    }
+
+    LaunchedEffect(returnToPageZeroPulse) {
+        if (returnToPageZeroPulse > 0) {
+            viewModel.closeAllDesktopOverlays()
+            viewModel.closeSettings()
+            viewModel.setSearching(false)
+            viewModel.setHomeEditMode(false)
+            if (pagerState.currentPage != 0) {
+                pagerState.animateScrollToPage(0)
+            }
         }
     }
 

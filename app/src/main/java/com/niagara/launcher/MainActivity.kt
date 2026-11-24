@@ -12,6 +12,8 @@ import androidx.compose.runtime.getValue
 import com.niagara.launcher.core.data.LocalAppIconCache
 import com.niagara.launcher.core.theme.NiagaraLauncherTheme
 import com.niagara.launcher.core.transition.HomeReturnAnimationGuard
+import com.niagara.launcher.core.transition.LauncherIntentAction
+import com.niagara.launcher.core.transition.LauncherIntentRouter
 import com.niagara.launcher.ui.home.HomeScreen
 import com.niagara.launcher.ui.home.HomeViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +31,9 @@ class MainActivity : ComponentActivity() {
 
     private val returnAnimationGuard = HomeReturnAnimationGuard()
     private val returnToHomeSignal = MutableStateFlow(0)
+    private val openSettingsSignal = MutableStateFlow(0)
+    private val returnToPageZeroSignal = MutableStateFlow(0)
+    private var isActivityStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,11 +43,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val returnPulse by returnToHomeSignal.collectAsState()
+            val openSettingsPulse by openSettingsSignal.collectAsState()
+            val returnToPageZeroPulse by returnToPageZeroSignal.collectAsState()
             NiagaraLauncherTheme {
                 CompositionLocalProvider(LocalAppIconCache provides iconCache) {
                     HomeScreen(
                         viewModel = viewModel,
                         returnToHomePulse = returnPulse,
+                        openSettingsPulse = openSettingsPulse,
+                        returnToPageZeroPulse = returnToPageZeroPulse,
                         onExternalAppLaunched = { returnAnimationGuard.markBackgrounded() }
                     )
                 }
@@ -50,10 +59,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        isActivityStarted = true
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        maybeTriggerHomeReturnTransition()
+        when (LauncherIntentRouter.resolveOnNewIntent(intent, isAlreadyActive = isActivityStarted)) {
+            LauncherIntentAction.OPEN_SETTINGS -> {
+                openSettingsSignal.value = openSettingsSignal.value + 1
+            }
+            LauncherIntentAction.RETURN_HOME_PAGE -> {
+                returnToPageZeroSignal.value = returnToPageZeroSignal.value + 1
+                maybeTriggerHomeReturnTransition()
+            }
+            LauncherIntentAction.STAY_HOME -> {
+                maybeTriggerHomeReturnTransition()
+            }
+        }
     }
 
     override fun onResume() {
@@ -70,6 +95,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        isActivityStarted = false
         returnAnimationGuard.markBackgrounded()
     }
 

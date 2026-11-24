@@ -19,55 +19,66 @@ val AccentSoftAmber = Color(0xFFFFB86B)
 val AccentMint = Color(0xFF63E2A0)
 
 // Base surfaces & typography
-val DarkSurface = Color(0xAD11131A)
-val DarkBackground = Color(0xFF0C0E13)
-val TextPrimaryDark = Color(0xFFF5F7FB)
-val TextSecondaryDark = Color(0xB8E2E7F2)
-val TextTertiaryDark = Color(0x7AD5DCEB)
+val DarkSurface = Color(0xB811141D)
+val DarkBackground = Color(0xFF0A0D14)
+val TextPrimaryDark = Color(0xFFF6F8FC)
+val TextSecondaryDark = Color(0xC2E4E9F5)
+val TextTertiaryDark = Color(0x85D5DCEB)
 val ScrimDark = Color(0x5C000000)
 
 // Layered atmospheric wallpaper scrim (improves legibility on bright wallpapers without muddying dark ones)
-val WallpaperScrimTop = Color(0x52070910)
-val WallpaperScrimMiddle = Color(0x28090C15)
-val WallpaperScrimBottom = Color(0x6106080F)
+val WallpaperScrimTop = Color(0x58070912)
+val WallpaperScrimMiddle = Color(0x2B090D17)
+val WallpaperScrimBottom = Color(0x68060810)
 
 // Restrained iOS frosted glass & specular hairline tokens
-val IosGlassFillTop = Color(0x29FFFFFF)
-val IosGlassFillBottom = Color(0x11FFFFFF)
-val IosGlassTintDark = Color(0x6E12151F)
-val IosGlassBorderTop = Color(0x4DFFFFFF)
-val IosGlassBorderBottom = Color(0x17FFFFFF)
-val IosGlassSheenStart = Color(0x1AFFFFFF)
-val IosGlassSheenEnd = Color(0x08FFFFFF)
+val IosGlassFillTop = Color(0x2EFFFFFF)
+val IosGlassFillBottom = Color(0x12FFFFFF)
+val IosGlassTintDark = Color(0x78111520)
+val IosGlassBorderTop = Color(0x57FFFFFF)
+val IosGlassBorderBottom = Color(0x1CFFFFFF)
+val IosGlassHighlightTop = Color(0x38FFFFFF)
+val IosGlassSheenStart = Color(0x1FFFFFFF)
+val IosGlassSheenEnd = Color(0x0AFFFFFF)
+
+// Card & dock elevation tokens
+val CardShadowAmbient = Color(0x4D000000)
+val CardShadowSpot = Color(0x70000000)
+val DockSurfaceDark = Color(0x8A121622)
+val DockBorderDark = Color(0x3DFFFFFF)
+
+// Clock typography accents
+val ClockColonTintDark = Color(0xCC8ED0FF)
+val ClockDateSecondaryDark = Color(0xCCE3E9F6)
 
 // Secondary pill & chip glass tokens
-val GlassPillTint = Color(0x52121520)
-val GlassPillFill = Color(0x1CFFFFFF)
-val GlassPillBorder = Color(0x30FFFFFF)
-val GlassPillElevatedFill = Color(0x2BFFFFFF)
+val GlassPillTint = Color(0x5E121623)
+val GlassPillFill = Color(0x21FFFFFF)
+val GlassPillBorder = Color(0x38FFFFFF)
+val GlassPillElevatedFill = Color(0x30FFFFFF)
 
 // Subtle icon & card micro-highlights
-val IconSpecularRim = Color(0x2EFFFFFF)
+val IconSpecularRim = Color(0x33FFFFFF)
 val IconShadowAmbient = Color(0x59000000)
-val IconShadowSpot = Color(0x78000000)
-val DragElevationHalo = Color(0x40FFFFFF)
+val IconShadowSpot = Color(0x7A000000)
+val DragElevationHalo = Color(0x4DFFFFFF)
 
 // Page indicator & edit chrome
-val IosPageIndicatorBg = Color(0x5411141E)
-val IosPageIndicatorBorder = Color(0x33FFFFFF)
+val IosPageIndicatorBg = Color(0x61111520)
+val IosPageIndicatorBorder = Color(0x38FFFFFF)
 val IosDotActive = Color(0xFFF7F9FC)
-val IosDotInactive = Color(0x5CFFFFFF)
-val IosRemoveBadgeBg = Color(0xE8ECEFF5)
+val IosDotInactive = Color(0x61FFFFFF)
+val IosRemoveBadgeBg = Color(0xEDEFF2F7)
 val IosRemoveBadgeIcon = Color(0xFF1A1C22)
-val IosLabelShadow = Color(0xB3000000)
+val IosLabelShadow = Color(0xBA000000)
 val IosAccentBlue = Color(0xFF0A84FF)
 
 // Alphabet wave bar refined accents
-val WaveTrackFill = Color(0x2E10131C)
-val WaveTrackActiveFill = Color(0x4D131826)
-val WaveTrackBorder = Color(0x26FFFFFF)
-val WaveBubbleSurface = Color(0xD9161B28)
-val WaveBubbleBorder = Color(0x47FFFFFF)
+val WaveTrackFill = Color(0x3610141F)
+val WaveTrackActiveFill = Color(0x5C141A29)
+val WaveTrackBorder = Color(0x2EFFFFFF)
+val WaveBubbleSurface = Color(0xE0151B29)
+val WaveBubbleBorder = Color(0x52FFFFFF)
 
 // iOS Dark Settings Inset Grouped palette
 val IosSettingsBackground = Color(0xFF000000)

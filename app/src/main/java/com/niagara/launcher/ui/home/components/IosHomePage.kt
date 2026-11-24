@@ -1,14 +1,11 @@
 package com.niagara.launcher.ui.home.components
 
-import android.content.Intent
-import android.provider.AlarmClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,10 +51,6 @@ import com.niagara.launcher.core.model.DeviceStatusSnapshot
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import com.niagara.launcher.core.transition.LaunchSourceBounds
-import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Independent iOS-style Home page featuring a refined translucent Glance header
@@ -268,22 +259,7 @@ private fun IosNormalHeader(
     onSearchClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
-    val context = LocalContext.current
     val visuals = LocalLauncherVisuals.current
-    var currentTime by remember { mutableStateOf("") }
-    var currentDate by remember { mutableStateOf("") }
-
-    val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    val dateFormatter = remember { SimpleDateFormat("M月d日 EEEE", Locale.getDefault()) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            val now = Date()
-            currentTime = timeFormatter.format(now)
-            currentDate = dateFormatter.format(now)
-            delay(1000)
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -295,42 +271,10 @@ private fun IosNormalHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        try {
-                            context.startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            })
-                        } catch (_: Exception) {
-                            // Ignore if alarm app unavailable
-                        }
-                    }
-            ) {
-                Text(
-                    text = currentTime.ifEmpty { "12:00" },
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.ExtraLight,
-                        letterSpacing = (-0.8).sp,
-                        color = visuals.textPrimary,
-                        shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 1.6f), blurRadius = 6f)
-                    )
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = currentDate,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = visuals.textSecondary,
-                        fontWeight = FontWeight.Medium,
-                        shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 1f), blurRadius = 3.5f)
-                    )
-                )
-            }
+            LauncherClockDisplay(
+                variant = ClockVariant.HERO_HOME,
+                modifier = Modifier.weight(1f)
+            )
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,

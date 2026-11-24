@@ -85,6 +85,12 @@
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+
+            <!-- Also expose an adaptive launcher icon entry for App Drawer & System Settings -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
         </activity>
 
         <!-- Package changes are observed at runtime via LauncherApps.Callback in AppRepository -->
