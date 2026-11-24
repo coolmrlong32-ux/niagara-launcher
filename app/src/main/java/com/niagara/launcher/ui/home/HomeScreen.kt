@@ -52,10 +52,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.niagara.launcher.core.data.LocalIconAppearance
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
@@ -72,7 +75,10 @@ import com.niagara.launcher.ui.home.components.InvisibleLeftAlphabetHotspot
 import com.niagara.launcher.ui.home.components.IosHomePage
 import com.niagara.launcher.ui.home.components.IosPageIndicator
 import com.niagara.launcher.ui.home.components.LauncherSettingsBottomSheet
+import com.niagara.launcher.ui.home.components.WeatherConfigDialog
+import com.niagara.launcher.ui.home.components.rememberForegroundDeviceStatus
 import com.niagara.launcher.ui.search.SearchOverlay
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -91,12 +97,44 @@ fun HomeScreen(
     val visuals = LocalLauncherVisuals.current
     val hostView = LocalView.current
     val density = LocalDensity.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val listState = rememberLazyListState()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var leftEdgeFocusedLetter by remember { mutableStateOf<Char?>(null) }
     var isHomeIconDragging by remember { mutableStateOf(false) }
+
+    // Foreground-only low-frequency device telemetry (RAM usage, battery temp & level)
+    val deviceStatus = rememberForegroundDeviceStatus(
+        enabled = uiState.preferences.showDeviceStatusInGlance || uiState.preferences.showBatteryInGlance
+    )
+
+    // Lazy background-safe weather refresh while foregrounded (never blocks cold startup)
+    LaunchedEffect(
+        lifecycleOwner,
+        uiState.preferences.showWeatherInGlance,
+        uiState.preferences.weatherLocationQuery
+    ) {
+        if (!uiState.preferences.showWeatherInGlance || uiState.preferences.weatherLocationQuery.isBlank()) {
+            return@LaunchedEffect
+        }
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            delay(650)
+            while (true) {
+                viewModel.refreshWeatherIfStale(force = false)
+                delay(15L * 60L * 1000L)
+            }
+        }
+    }
+
+    val onWeatherTap: () -> Unit = {
+        if (uiState.preferences.weatherLocationQuery.isBlank()) {
+            viewModel.openWeatherConfigDialog()
+        } else {
+            viewModel.refreshWeatherIfStale(force = true)
+        }
+    }
 
     // Restrained, non-blocking spring settle when returning from another app to the launcher
     val returnScale = remember { Animatable(1f) }
@@ -259,6 +297,10 @@ fun HomeScreen(
                                     desktopApps = uiState.desktopApps,
                                     isEditMode = uiState.isHomeEditMode,
                                     preferences = uiState.preferences,
+                                    deviceStatus = deviceStatus,
+                                    isWeatherRefreshing = uiState.isWeatherRefreshing,
+                                    onWeatherClick = onWeatherTap,
+                                    onWeatherLongClick = { viewModel.openWeatherConfigDialog() },
                                     onLaunchApp = { app, bounds -> launchWithTransition(app, bounds) },
                                     onEnterEditMode = { viewModel.setHomeEditMode(true) },
                                     onExitEditMode = { viewModel.setHomeEditMode(false) },
@@ -308,6 +350,14 @@ fun HomeScreen(
                                                 HomeListEntry.Glance -> {
                                                     GlanceWidget(
                                                         showBattery = uiState.preferences.showBatteryInGlance,
+                                                        showDeviceStatus = uiState.preferences.showDeviceStatusInGlance,
+                                                        showWeather = uiState.preferences.showWeatherInGlance,
+                                                        deviceStatus = deviceStatus,
+                                                        weather = uiState.preferences.cachedWeather,
+                                                        weatherLocationQuery = uiState.preferences.weatherLocationQuery,
+                                                        isWeatherRefreshing = uiState.isWeatherRefreshing,
+                                                        onWeatherClick = onWeatherTap,
+                                                        onWeatherLongClick = { viewModel.openWeatherConfigDialog() },
                                                         onSearchClick = { viewModel.setSearching(true) },
                                                         onSettingsClick = { viewModel.openSettings() }
                                                     )
@@ -498,8 +548,27 @@ fun HomeScreen(
                     onRightHandedChange = { viewModel.setRightHanded(it) },
                     onHapticFeedbackChange = { viewModel.setHapticFeedbackEnabled(it) },
                     onShowBatteryChange = { viewModel.setShowBatteryInGlance(it) },
+                    onShowDeviceStatusChange = { viewModel.setShowDeviceStatusInGlance(it) },
+                    onShowWeatherChange = { viewModel.setShowWeatherInGlance(it) },
+                    onConfigureWeatherClick = {
+                        viewModel.closeSettings()
+                        viewModel.openWeatherConfigDialog()
+                    },
                     onUnhideApp = { viewModel.unhideApp(it) },
                     onOpenDesktopSettings = { viewModel.openDesktopSettings() }
+                )
+            }
+
+            // Open-Meteo Weather Location Configuration Dialog
+            if (uiState.isWeatherConfigDialogVisible) {
+                WeatherConfigDialog(
+                    currentQuery = uiState.preferences.weatherLocationQuery,
+                    cachedWeather = uiState.preferences.cachedWeather,
+                    isRefreshing = uiState.isWeatherRefreshing,
+                    errorMessage = uiState.weatherErrorMessage,
+                    onDismiss = { viewModel.closeWeatherConfigDialog() },
+                    onSaveLocation = { viewModel.updateWeatherLocation(it) },
+                    onRefreshNow = { viewModel.refreshWeatherIfStale(force = true) }
                 )
             }
 

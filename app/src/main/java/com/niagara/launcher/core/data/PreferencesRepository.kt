@@ -4,14 +4,17 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
+import com.niagara.launcher.core.model.WeatherSnapshot
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -129,6 +132,17 @@ class PreferencesRepository internal constructor(
         val IS_RIGHT_HANDED = booleanPreferencesKey("is_right_handed")
         val HAPTIC_FEEDBACK = booleanPreferencesKey("haptic_feedback_enabled")
         val SHOW_BATTERY = booleanPreferencesKey("show_battery_in_glance")
+        val SHOW_DEVICE_STATUS = booleanPreferencesKey("show_device_status_in_glance")
+        val SHOW_WEATHER = booleanPreferencesKey("show_weather_in_glance")
+        val WEATHER_LOCATION_QUERY = stringPreferencesKey("weather_location_query")
+        val WEATHER_RESOLVED_QUERY = stringPreferencesKey("weather_resolved_query")
+        val WEATHER_CACHE_LOCATION = stringPreferencesKey("weather_cache_location")
+        val WEATHER_CACHE_LAT = doublePreferencesKey("weather_cache_lat")
+        val WEATHER_CACHE_LON = doublePreferencesKey("weather_cache_lon")
+        val WEATHER_CACHE_TEMP = doublePreferencesKey("weather_cache_temp")
+        val WEATHER_CACHE_CODE = intPreferencesKey("weather_cache_code")
+        val WEATHER_CACHE_IS_DAY = booleanPreferencesKey("weather_cache_is_day")
+        val WEATHER_CACHE_UPDATED_AT = longPreferencesKey("weather_cache_updated_at")
         val DESKTOP_ICON_SIZE_DP = floatPreferencesKey("desktop_icon_size_dp")
         val DESKTOP_GRID_COLUMNS = intPreferencesKey("desktop_grid_columns")
         val SHOW_APP_LABELS = booleanPreferencesKey("show_app_labels")
@@ -145,6 +159,31 @@ class PreferencesRepository internal constructor(
         val isRightHanded = preferences[PreferencesKeys.IS_RIGHT_HANDED] ?: true
         val hapticEnabled = preferences[PreferencesKeys.HAPTIC_FEEDBACK] ?: true
         val showBattery = preferences[PreferencesKeys.SHOW_BATTERY] ?: true
+        val showDeviceStatus = preferences[PreferencesKeys.SHOW_DEVICE_STATUS] ?: true
+        val showWeather = preferences[PreferencesKeys.SHOW_WEATHER] ?: true
+        val weatherLocationQuery = preferences[PreferencesKeys.WEATHER_LOCATION_QUERY].orEmpty()
+        val weatherResolvedQuery = preferences[PreferencesKeys.WEATHER_RESOLVED_QUERY].orEmpty()
+        val cachedWeather = run {
+            val location = preferences[PreferencesKeys.WEATHER_CACHE_LOCATION]
+            val lat = preferences[PreferencesKeys.WEATHER_CACHE_LAT]
+            val lon = preferences[PreferencesKeys.WEATHER_CACHE_LON]
+            val temp = preferences[PreferencesKeys.WEATHER_CACHE_TEMP]
+            val code = preferences[PreferencesKeys.WEATHER_CACHE_CODE]
+            val updatedAt = preferences[PreferencesKeys.WEATHER_CACHE_UPDATED_AT]
+            if (location != null && lat != null && lon != null && temp != null && code != null && updatedAt != null) {
+                WeatherSnapshot(
+                    locationName = location,
+                    latitude = lat,
+                    longitude = lon,
+                    temperatureCelsius = temp,
+                    weatherCode = code,
+                    isDay = preferences[PreferencesKeys.WEATHER_CACHE_IS_DAY] ?: true,
+                    updatedAtMillis = updatedAt
+                )
+            } else {
+                null
+            }
+        }
         val desktopIconSizeDp = LauncherPreferences.clampIconSizeDp(
             preferences[PreferencesKeys.DESKTOP_ICON_SIZE_DP] ?: LauncherPreferences.DEFAULT_ICON_SIZE_DP
         )
@@ -165,6 +204,11 @@ class PreferencesRepository internal constructor(
             isRightHanded = isRightHanded,
             hapticFeedbackEnabled = hapticEnabled,
             showBatteryInGlance = showBattery,
+            showDeviceStatusInGlance = showDeviceStatus,
+            showWeatherInGlance = showWeather,
+            weatherLocationQuery = weatherLocationQuery,
+            weatherResolvedQuery = weatherResolvedQuery,
+            cachedWeather = cachedWeather,
             desktopIconSizeDp = desktopIconSizeDp,
             desktopGridColumns = desktopGridColumns,
             showAppLabels = showAppLabels,
@@ -351,6 +395,50 @@ class PreferencesRepository internal constructor(
     suspend fun setShowBatteryInGlance(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_BATTERY] = enabled
+        }
+    }
+
+    suspend fun setShowDeviceStatusInGlance(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_DEVICE_STATUS] = enabled
+        }
+    }
+
+    suspend fun setShowWeatherInGlance(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SHOW_WEATHER] = enabled
+        }
+    }
+
+    suspend fun setWeatherLocationQuery(query: String) {
+        val normalized = query.trim()
+        dataStore.edit { preferences ->
+            if (normalized.isEmpty()) {
+                preferences.remove(PreferencesKeys.WEATHER_LOCATION_QUERY)
+                preferences.remove(PreferencesKeys.WEATHER_RESOLVED_QUERY)
+                preferences.remove(PreferencesKeys.WEATHER_CACHE_LOCATION)
+                preferences.remove(PreferencesKeys.WEATHER_CACHE_LAT)
+                preferences.remove(PreferencesKeys.WEATHER_CACHE_LON)
+                preferences.remove(PreferencesKeys.WEATHER_CACHE_TEMP)
+                preferences.remove(PreferencesKeys.WEATHER_CACHE_CODE)
+                preferences.remove(PreferencesKeys.WEATHER_CACHE_IS_DAY)
+                preferences.remove(PreferencesKeys.WEATHER_CACHE_UPDATED_AT)
+            } else {
+                preferences[PreferencesKeys.WEATHER_LOCATION_QUERY] = normalized
+            }
+        }
+    }
+
+    suspend fun saveCachedWeather(resolvedQuery: String, snapshot: WeatherSnapshot) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.WEATHER_RESOLVED_QUERY] = resolvedQuery.trim()
+            preferences[PreferencesKeys.WEATHER_CACHE_LOCATION] = snapshot.locationName
+            preferences[PreferencesKeys.WEATHER_CACHE_LAT] = snapshot.latitude
+            preferences[PreferencesKeys.WEATHER_CACHE_LON] = snapshot.longitude
+            preferences[PreferencesKeys.WEATHER_CACHE_TEMP] = snapshot.temperatureCelsius
+            preferences[PreferencesKeys.WEATHER_CACHE_CODE] = snapshot.weatherCode
+            preferences[PreferencesKeys.WEATHER_CACHE_IS_DAY] = snapshot.isDay
+            preferences[PreferencesKeys.WEATHER_CACHE_UPDATED_AT] = snapshot.updatedAtMillis
         }
     }
 

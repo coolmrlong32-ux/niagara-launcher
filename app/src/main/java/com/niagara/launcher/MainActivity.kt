@@ -20,7 +20,11 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: HomeViewModel by viewModels {
         val app = application as NiagaraApplication
-        HomeViewModel.Factory(app.appRepository, app.preferencesRepository)
+        HomeViewModel.Factory(
+            appRepository = app.appRepository,
+            preferencesRepository = app.preferencesRepository,
+            weatherRepository = app.weatherRepository
+        )
     }
 
     private val returnAnimationGuard = HomeReturnAnimationGuard()

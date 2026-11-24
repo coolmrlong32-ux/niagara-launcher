@@ -35,5 +35,8 @@ data class HomeUiState(
     val selectedAppForMenu: AppItem? = null,
     val installedIconPacks: List<IconPackInfo> = emptyList(),
     val isRefreshingIconPacks: Boolean = false,
+    val isWeatherRefreshing: Boolean = false,
+    val weatherErrorMessage: String? = null,
+    val isWeatherConfigDialogVisible: Boolean = false,
     val preferences: LauncherPreferences = LauncherPreferences()
 )

@@ -17,9 +17,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Swipe
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.WbCloudy
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,6 +57,9 @@ fun LauncherSettingsBottomSheet(
     onRightHandedChange: (Boolean) -> Unit,
     onHapticFeedbackChange: (Boolean) -> Unit,
     onShowBatteryChange: (Boolean) -> Unit,
+    onShowDeviceStatusChange: (Boolean) -> Unit = {},
+    onShowWeatherChange: (Boolean) -> Unit = {},
+    onConfigureWeatherClick: (() -> Unit)? = null,
     onUnhideApp: (AppItem) -> Unit,
     onOpenDesktopSettings: (() -> Unit)? = null
 ) {
@@ -157,10 +163,80 @@ fun LauncherSettingsBottomSheet(
             SettingSwitchRow(
                 icon = Icons.Outlined.BatteryFull,
                 title = "顶部显示电量百分比",
-                subtitle = "在时间与日期旁展示当前电池电量",
+                subtitle = "在 Glance 状态栏展示当前电池电量",
                 checked = preferences.showBatteryInGlance,
                 onCheckedChange = onShowBatteryChange
             )
+
+            SettingSwitchRow(
+                icon = Icons.Outlined.Memory,
+                title = "顶部显示内存与电池温度",
+                subtitle = "仅前台可见时低频刷新，退后台自动停止采集",
+                checked = preferences.showDeviceStatusInGlance,
+                onCheckedChange = onShowDeviceStatusChange
+            )
+
+            SettingSwitchRow(
+                icon = Icons.Outlined.WbCloudy,
+                title = "顶部显示实时天气",
+                subtitle = "使用 Open-Meteo 免密钥方案并本地缓存",
+                checked = preferences.showWeatherInGlance,
+                onCheckedChange = onShowWeatherChange
+            )
+
+            if (preferences.showWeatherInGlance && onConfigureWeatherClick != null) {
+                val weatherSummary = preferences.cachedWeather?.let {
+                    "${it.locationName} · ${it.formattedTemperature} ${it.condition.label}"
+                } ?: preferences.weatherLocationQuery.ifBlank { "未配置（点击输入城市或经纬度）" }
+
+                Surface(
+                    onClick = onConfigureWeatherClick,
+                    color = Color.White.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp, bottom = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.LocationOn,
+                            contentDescription = "天气位置",
+                            tint = Color(0xFF64D2FF),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "天气位置",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            )
+                            Text(
+                                text = weatherSummary,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color.White.copy(alpha = 0.58f),
+                                    fontSize = 12.sp
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.55f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))

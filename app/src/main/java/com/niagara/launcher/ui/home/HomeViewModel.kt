@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.niagara.launcher.core.data.AppRepository
 import com.niagara.launcher.core.data.PreferencesRepository
+import com.niagara.launcher.core.data.WeatherRefreshResult
+import com.niagara.launcher.core.data.WeatherRepository
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
@@ -31,7 +33,8 @@ import kotlinx.coroutines.launch
  */
 class HomeViewModel(
     private val appRepository: AppRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val weatherRepository: WeatherRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -40,6 +43,7 @@ class HomeViewModel(
     private val _searchQuery = MutableStateFlow("")
     private val _liveIconSizeOverride = MutableStateFlow<Float?>(null)
     private var iconSizePersistJob: Job? = null
+    private var weatherRefreshJob: Job? = null
 
     private val _snackbarEvents = MutableSharedFlow<HomeSnackbarEvent>(extraBufferCapacity = 8)
     val snackbarEvents: SharedFlow<HomeSnackbarEvent> = _snackbarEvents.asSharedFlow()
@@ -417,6 +421,75 @@ class HomeViewModel(
         }
     }
 
+    fun setShowDeviceStatusInGlance(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowDeviceStatusInGlance(enabled)
+        }
+    }
+
+    fun setShowWeatherInGlance(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowWeatherInGlance(enabled)
+            if (enabled) {
+                refreshWeatherIfStale(force = false)
+            }
+        }
+    }
+
+    fun openWeatherConfigDialog() {
+        _uiState.update {
+            it.copy(
+                isWeatherConfigDialogVisible = true,
+                weatherErrorMessage = null
+            )
+        }
+    }
+
+    fun closeWeatherConfigDialog() {
+        _uiState.update { it.copy(isWeatherConfigDialogVisible = false) }
+    }
+
+    fun updateWeatherLocation(query: String) {
+        val normalized = query.trim()
+        viewModelScope.launch {
+            preferencesRepository.setWeatherLocationQuery(normalized)
+            _uiState.update { it.copy(weatherErrorMessage = null) }
+            if (normalized.isNotEmpty()) {
+                val updatedPrefs = _uiState.value.preferences.copy(weatherLocationQuery = normalized)
+                runWeatherRefresh(updatedPrefs, force = true)
+            }
+        }
+    }
+
+    fun refreshWeatherIfStale(force: Boolean = false) {
+        val prefs = _uiState.value.preferences
+        if (!prefs.showWeatherInGlance || prefs.weatherLocationQuery.isBlank()) return
+        runWeatherRefresh(prefs, force = force)
+    }
+
+    private fun runWeatherRefresh(prefs: LauncherPreferences, force: Boolean) {
+        val repo = weatherRepository ?: return
+        if (weatherRefreshJob?.isActive == true && !force) return
+        weatherRefreshJob?.cancel()
+        weatherRefreshJob = viewModelScope.launch {
+            _uiState.update { it.copy(isWeatherRefreshing = true, weatherErrorMessage = null) }
+            try {
+                when (val result = repo.refreshIfNeeded(prefs, force = force)) {
+                    is WeatherRefreshResult.Updated -> {
+                        _uiState.update { it.copy(weatherErrorMessage = null) }
+                    }
+                    is WeatherRefreshResult.Failed -> {
+                        _uiState.update { it.copy(weatherErrorMessage = result.message) }
+                    }
+                    WeatherRefreshResult.CacheFresh,
+                    WeatherRefreshResult.NotConfigured -> Unit
+                }
+            } finally {
+                _uiState.update { it.copy(isWeatherRefreshing = false) }
+            }
+        }
+    }
+
     fun previewDesktopIconSizeDp(sizeDp: Float) {
         val clamped = LauncherPreferences.clampIconSizeDp(sizeDp)
         _liveIconSizeOverride.value = clamped
@@ -492,11 +565,12 @@ class HomeViewModel(
 
     class Factory(
         private val appRepository: AppRepository,
-        private val preferencesRepository: PreferencesRepository
+        private val preferencesRepository: PreferencesRepository,
+        private val weatherRepository: WeatherRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return HomeViewModel(appRepository, preferencesRepository) as T
+            return HomeViewModel(appRepository, preferencesRepository, weatherRepository) as T
         }
     }
 }
