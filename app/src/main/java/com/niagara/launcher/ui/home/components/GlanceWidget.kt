@@ -1,18 +1,13 @@
 package com.niagara.launcher.ui.home.components
 
-import android.content.Intent
-import android.provider.AlarmClock
-import android.provider.CalendarContract
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,15 +21,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BatteryFull
-import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.DeviceThermostat
 import androidx.compose.material.icons.outlined.Grain
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.NightsStay
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Thunderstorm
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.WbCloudy
 import androidx.compose.material.icons.outlined.WbSunny
@@ -55,9 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -84,9 +74,6 @@ import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Collects lightweight RAM & battery telemetry ONLY while the launcher is in the foreground
@@ -121,186 +108,23 @@ fun rememberForegroundDeviceStatus(
 }
 
 /**
- * Minimalist Niagara Glance widget displaying time, weather, date, real-time phone telemetry
- * (RAM usage, battery temperature, charge), and quick Search/Settings actions.
+ * Minimalist Page 2 ("All Apps") Glance header displaying ONLY the redesigned editorial clock & date.
+ * Weather and device-telemetry tags are intentionally omitted here to keep Page 2 visually pure.
  */
 @Composable
 fun GlanceWidget(
     modifier: Modifier = Modifier,
-    showBattery: Boolean = true,
-    showDeviceStatus: Boolean = true,
-    showWeather: Boolean = true,
-    deviceStatus: DeviceStatusSnapshot? = null,
-    weather: WeatherSnapshot? = null,
-    weatherLocationQuery: String = "",
-    isWeatherRefreshing: Boolean = false,
-    onWeatherClick: () -> Unit = {},
-    onWeatherLongClick: () -> Unit = {},
-    onSearchClick: () -> Unit,
-    onSettingsClick: () -> Unit
+    subtitle: String? = null
 ) {
-    val context = LocalContext.current
-    val visuals = LocalLauncherVisuals.current
-    var currentTime by remember { mutableStateOf("") }
-    var currentDate by remember { mutableStateOf("") }
-    var currentDayOfWeek by remember { mutableStateOf("") }
-
-    val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    val dateFormatter = remember { SimpleDateFormat("M月d日", Locale.getDefault()) }
-    val dayOfWeekFormatter = remember { SimpleDateFormat("EEEE", Locale.getDefault()) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            val now = Date()
-            currentTime = timeFormatter.format(now)
-            currentDate = dateFormatter.format(now)
-            currentDayOfWeek = dayOfWeekFormatter.format(now)
-            delay(1000)
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .padding(horizontal = 24.dp, vertical = 14.dp)
     ) {
-        // Time + Weather minimal top row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = currentTime.ifEmpty { "12:00" },
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 54.sp,
-                    fontWeight = FontWeight.ExtraLight,
-                    letterSpacing = (-1.2).sp,
-                    color = visuals.textPrimary,
-                    shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 2f), blurRadius = 6f)
-                ),
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    try {
-                        context.startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        })
-                    } catch (_: Exception) {
-                        // Fallback
-                    }
-                }
-            )
-
-            if (showWeather) {
-                GlanceWeatherBadge(
-                    weather = weather,
-                    hasConfiguredLocation = weatherLocationQuery.isNotBlank(),
-                    isRefreshing = isWeatherRefreshing,
-                    onClick = onWeatherClick,
-                    onLongClick = onWeatherLongClick,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Date and Search/Settings action row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        try {
-                            val calendarUri = CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build()
-                            context.startActivity(Intent(Intent.ACTION_VIEW, calendarUri).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            })
-                        } catch (_: Exception) {
-                            // Fallback
-                        }
-                    }
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.CalendarToday,
-                    contentDescription = null,
-                    tint = visuals.textSecondary,
-                    modifier = Modifier.size(13.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "$currentDate $currentDayOfWeek",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = visuals.textSecondary,
-                        fontWeight = FontWeight.Medium,
-                        shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 1f), blurRadius = 3f)
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                IosGlassPill(
-                    onClick = onSearchClick,
-                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Search,
-                        contentDescription = "搜索",
-                        tint = visuals.textPrimary,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "搜索",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = visuals.textPrimary,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                }
-
-                IosGlassPill(
-                    shape = CircleShape,
-                    onClick = onSettingsClick,
-                    contentPadding = PaddingValues(7.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Tune,
-                        contentDescription = "启动器设置",
-                        tint = visuals.textPrimary.copy(alpha = 0.92f),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-            }
-        }
-
-        // Real-time RAM + battery temperature + battery level telemetry pill
-        if (showDeviceStatus || showBattery) {
-            Spacer(modifier = Modifier.height(10.dp))
-            GlanceTelemetryStrip(
-                status = deviceStatus,
-                showMemoryAndTemp = showDeviceStatus,
-                showBattery = showBattery
-            )
-        }
+        LauncherClockDisplay(
+            variant = ClockVariant.COMPACT_DRAWER,
+            subtitle = subtitle
+        )
     }
 }
 
@@ -493,7 +317,7 @@ private fun TelemetryDotDivider() {
     )
 }
 
-private fun resolveWeatherIcon(iconType: WeatherIconType?): ImageVector {
+internal fun resolveWeatherIcon(iconType: WeatherIconType?): ImageVector {
     return when (iconType) {
         WeatherIconType.CLEAR_DAY -> Icons.Outlined.WbSunny
         WeatherIconType.CLEAR_NIGHT -> Icons.Outlined.NightsStay

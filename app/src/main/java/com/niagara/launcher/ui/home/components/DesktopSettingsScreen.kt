@@ -24,9 +24,11 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhotoSizeSelectLarge
 import androidx.compose.material.icons.rounded.PhotoSizeSelectSmall
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Tune
@@ -82,6 +84,8 @@ fun DesktopSettingsScreen(
     onGridColumnsChange: (Int) -> Unit,
     onShowAppLabelsChange: (Boolean) -> Unit,
     onShowFavoritesBarChange: (Boolean) -> Unit,
+    onDoubleTapToLockChange: (Boolean) -> Unit = {},
+    onOpenScreenLockGuide: () -> Unit = {},
     onOpenIconPicker: () -> Unit,
     onEnterEditMode: () -> Unit,
     onOpenLauncherSettings: () -> Unit,
@@ -91,6 +95,12 @@ fun DesktopSettingsScreen(
         installedIconPacks.firstOrNull { it.packageName == packPkg }?.label ?: packPkg
     }
     val activeIconSummary = activePackLabel ?: preferences.iconStyle.displayName
+    val lockPermissionStatus = rememberScreenLockPermissionStatus()
+    val lockStatusText = when {
+        lockPermissionStatus.accessibilityEnabled -> "已授权无障碍"
+        lockPermissionStatus.deviceAdminEnabled -> "已授权设备管理器"
+        else -> "需开启权限 · 点击引导"
+    }
 
     var latestSliderValue by remember(preferences.desktopIconSizeDp) {
         mutableFloatStateOf(preferences.desktopIconSizeDp)
@@ -265,6 +275,32 @@ fun DesktopSettingsScreen(
                     onClick = onOpenIconPicker
                 )
             }
+
+            IosSettingsSectionHeader(title = "手势与锁屏")
+
+            IosInsetGroupedCard {
+                IosSettingsSwitchRow(
+                    icon = Icons.Rounded.Lock,
+                    iconBg = IosIconBadgeIndigo,
+                    title = "双击空白区域熄屏",
+                    checked = preferences.doubleTapToLockEnabled,
+                    onCheckedChange = onDoubleTapToLockChange
+                )
+
+                IosInsetDivider()
+
+                IosSettingsNavigationRow(
+                    icon = Icons.Rounded.Security,
+                    iconBg = if (lockPermissionStatus.hasAnyPermission) IosIconBadgeGreen else IosIconBadgeOrange,
+                    title = "锁屏权限状态",
+                    valueText = lockStatusText,
+                    onClick = onOpenScreenLockGuide
+                )
+            }
+
+            IosSettingsSectionFooter(
+                text = "仅在桌面空白区域双击时触发熄屏，网格间隙及应用点击窗口内自动防误触。"
+            )
 
             IosSettingsSectionHeader(title = "快捷操作")
 

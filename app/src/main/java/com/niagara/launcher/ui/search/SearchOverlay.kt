@@ -82,7 +82,7 @@ fun SearchOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xE60A0B0E))
+                .background(Color(0xEB090B10))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -126,14 +126,14 @@ fun SearchOverlay(
                             )
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(24.dp),
+                        shape = RoundedCornerShape(22.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White.copy(alpha = 0.1f),
+                            focusedContainerColor = Color.White.copy(alpha = 0.11f),
                             unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.14f)
                         ),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = {

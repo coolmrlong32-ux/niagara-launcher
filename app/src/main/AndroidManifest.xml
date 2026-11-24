@@ -85,9 +85,41 @@
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+
+            <!-- Also expose an adaptive launcher icon entry for App Drawer & System Settings -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
         </activity>
 
         <!-- Package changes are observed at runtime via LauncherApps.Callback in AppRepository -->
+
+        <service
+            android:name=".core.system.ScreenLockAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_lock_screen_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/screen_lock_accessibility_config" />
+        </service>
+
+        <receiver
+            android:name=".core.system.ScreenLockDeviceAdminReceiver"
+            android:exported="true"
+            android:label="@string/device_admin_lock_label"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_policies" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

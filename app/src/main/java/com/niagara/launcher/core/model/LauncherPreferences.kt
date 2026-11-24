@@ -20,7 +20,10 @@ data class LauncherPreferences(
     val showAppLabels: Boolean = true,
     val showFavoritesBar: Boolean = true,
     val iconStyle: IconStyle = IconStyle.IOS_SQUIRCLE,
-    val iconPackPackage: String? = null
+    val iconPackPackage: String? = null,
+    val doubleTapToLockEnabled: Boolean = true,
+    val homeWidgets: List<HomeWidgetItem> = emptyList(),
+    val homeSectionOrder: List<HomeSectionType> = HomeSectionOrderCodec.DEFAULT_ORDER
 ) {
     val maxDesktopApps: Int
         get() = normalizeGridColumns(desktopGridColumns) * DESKTOP_GRID_ROWS

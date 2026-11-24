@@ -65,4 +65,20 @@ class HomeListModelTest {
         // Empty map returns null
         assertNull(HomeListModel.resolveTargetLetterIndex('A', emptyMap()))
     }
+
+    @Test
+    fun testResolveTargetLetterAndBuildLockedApps() {
+        val a1 = app("com.a", "Alpha", 'A')
+        val f1 = app("com.f", "Files", 'F')
+        val grouped = mapOf('A' to listOf(a1), 'F' to listOf(f1))
+
+        assertEquals('A', HomeListModel.resolveTargetLetter('A', grouped.keys))
+        assertEquals('A', HomeListModel.resolveTargetLetter('B', grouped.keys))
+        assertEquals('F', HomeListModel.resolveTargetLetter('E', grouped.keys))
+        assertNull(HomeListModel.resolveTargetLetter('A', emptySet()))
+
+        assertEquals(listOf(a1), HomeListModel.buildLockedApps('B', grouped))
+        assertEquals(listOf(f1), HomeListModel.buildLockedApps('E', grouped))
+        assertTrue(HomeListModel.buildLockedApps('A', emptyMap()).isEmpty())
+    }
 }

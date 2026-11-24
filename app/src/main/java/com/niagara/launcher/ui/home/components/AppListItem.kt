@@ -1,10 +1,14 @@
 package com.niagara.launcher.ui.home.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -53,6 +58,7 @@ import com.niagara.launcher.core.theme.IconShadowSpot
 import com.niagara.launcher.core.theme.IconSpecularRim
 import com.niagara.launcher.core.theme.IosSquircleShape
 import com.niagara.launcher.core.theme.IosSubtleTileShape
+import com.niagara.launcher.core.theme.LauncherMotion
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import com.niagara.launcher.core.transition.LaunchBoundsRef
 import com.niagara.launcher.core.transition.LaunchSourceBounds
@@ -86,13 +92,31 @@ fun AppListItem(
     val iconShape = remember(iconAppearance.iconStyle) { resolveIconShape(iconAppearance.iconStyle) }
     val applyFrameChrome = iconAppearance.iconPackPackage == null && iconAppearance.iconStyle != IconStyle.ADAPTIVE
     val iconBoundsRef = remember(app.key) { LaunchBoundsRef() }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.985f else 1f,
+        animationSpec = LauncherMotion.SnappySpring,
+        label = "appItemPressScale"
+    )
+    val pressBackground by animateColorAsState(
+        targetValue = if (isPressed) Color.White.copy(alpha = 0.08f) else Color.Transparent,
+        label = "appItemPressBg"
+    )
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 1.dp)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(IosSubtleTileShape)
+            .background(pressBackground)
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
                 onClick = {
                     if (onClickWithBounds != null) {
                         onClickWithBounds(iconBoundsRef.bounds)
@@ -102,7 +126,7 @@ fun AppListItem(
                 },
                 onLongClick = onLongClick
             )
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+            .padding(horizontal = 14.dp, vertical = 9.5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val iconModifier = Modifier

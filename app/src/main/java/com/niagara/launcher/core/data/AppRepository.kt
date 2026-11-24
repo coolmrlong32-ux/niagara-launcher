@@ -164,7 +164,6 @@ class AppRepository(private val context: Context) {
 
         var updatedList = _installedApps.value
         for ((packageName, event) in latestByPackage) {
-            if (packageName == context.packageName) continue
             iconCache.evictPackage(packageName)
 
             val replacementApps = when (event) {
@@ -219,7 +218,6 @@ class AppRepository(private val context: Context) {
         val activityInfo = resolveInfo.activityInfo ?: return null
         val packageName = activityInfo.packageName
         val activityName = activityInfo.name
-        if (packageName == context.packageName) return null
 
         val label = resolveInfo.loadLabel(packageManager).toString()
         val pinyinIndex = PinyinEngine.buildIndex(label)

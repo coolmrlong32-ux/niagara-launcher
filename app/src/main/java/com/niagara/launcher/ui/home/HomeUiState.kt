@@ -3,6 +3,7 @@ package com.niagara.launcher.ui.home
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.IconPackInfo
 import com.niagara.launcher.core.model.LauncherPreferences
+import com.niagara.launcher.core.widget.SystemWidgetProviderEntry
 
 enum class AppPickerMode {
     FAVORITES,
@@ -22,6 +23,8 @@ data class HomeUiState(
     val appsByLetter: Map<Char, List<AppItem>> = emptyMap(),
     val letterIndexMap: Map<Char, Int> = emptyMap(),
     val availableLetters: Set<Char> = emptySet(),
+    val lockedLetter: Char? = null,
+    val lockedLetterApps: List<AppItem> = emptyList(),
     val searchQuery: String = "",
     val searchResults: List<AppItem> = emptyList(),
     val hiddenSearchResults: List<AppItem> = emptyList(),
@@ -38,5 +41,9 @@ data class HomeUiState(
     val isWeatherRefreshing: Boolean = false,
     val weatherErrorMessage: String? = null,
     val isWeatherConfigDialogVisible: Boolean = false,
+    val isScreenLockGuideVisible: Boolean = false,
+    val isWidgetPickerVisible: Boolean = false,
+    val availableSystemWidgets: List<SystemWidgetProviderEntry> = emptyList(),
+    val isLoadingSystemWidgets: Boolean = false,
     val preferences: LauncherPreferences = LauncherPreferences()
 )

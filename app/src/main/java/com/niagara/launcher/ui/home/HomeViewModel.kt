@@ -1,5 +1,6 @@
 package com.niagara.launcher.ui.home
 
+import android.content.Context
 import android.view.View
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -9,10 +10,15 @@ import com.niagara.launcher.core.data.PreferencesRepository
 import com.niagara.launcher.core.data.WeatherRefreshResult
 import com.niagara.launcher.core.data.WeatherRepository
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.model.BuiltInWidgetKind
+import com.niagara.launcher.core.model.HomeSectionType
+import com.niagara.launcher.core.model.HomeWidgetCodec
+import com.niagara.launcher.core.model.HomeWidgetItem
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.search.AppSearchEngine
 import com.niagara.launcher.core.transition.LaunchSourceBounds
+import com.niagara.launcher.core.widget.SystemWidgetManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,6 +48,7 @@ class HomeViewModel(
 
     private val _searchQuery = MutableStateFlow("")
     private val _liveIconSizeOverride = MutableStateFlow<Float?>(null)
+    private val _lockedLetter = MutableStateFlow<Char?>(null)
     private var iconSizePersistJob: Job? = null
     private var weatherRefreshJob: Job? = null
 
@@ -56,19 +63,34 @@ class HomeViewModel(
 
     private fun observeData() {
         viewModelScope.launch {
-            combine(
+            val baseDataFlow = combine(
                 appRepository.installedAppsFlow,
                 appRepository.isLoaded,
-                preferencesRepository.launcherPreferencesFlow,
+                preferencesRepository.launcherPreferencesFlow
+            ) { installedApps, isLoaded, prefs ->
+                Triple(installedApps, isLoaded, prefs)
+            }
+            val uiInputsFlow = combine(
                 _searchQuery,
-                _liveIconSizeOverride
-            ) { installedApps, isLoaded, prefs, query, liveIconSize ->
+                _liveIconSizeOverride,
+                _lockedLetter
+            ) { query, liveIconSize, lockedLetter ->
+                Triple(query, liveIconSize, lockedLetter)
+            }
+
+            combine(baseDataFlow, uiInputsFlow) { (installedApps, isLoaded, prefs), (query, liveIconSize, lockedLetter) ->
                 val effectivePrefs = if (liveIconSize != null) {
                     prefs.copy(desktopIconSizeDp = liveIconSize)
                 } else {
                     prefs
                 }
                 val processed = processApps(installedApps, effectivePrefs)
+                val resolvedLockedLetter = lockedLetter?.let {
+                    HomeListModel.resolveTargetLetter(it, processed.grouped.keys)
+                }
+                val lockedApps = resolvedLockedLetter?.let {
+                    processed.grouped[it].orEmpty()
+                }.orEmpty()
                 val searchResults = if (query.isBlank()) {
                     emptyList()
                 } else {
@@ -82,6 +104,8 @@ class HomeViewModel(
                 ObservedState(
                     isLoading = !isLoaded,
                     processed = processed,
+                    lockedLetter = resolvedLockedLetter,
+                    lockedLetterApps = lockedApps,
                     searchQuery = query,
                     searchResults = searchResults,
                     hiddenSearchResults = hiddenSearchResults
@@ -89,6 +113,9 @@ class HomeViewModel(
             }
                 .flowOn(Dispatchers.Default)
                 .collect { observed ->
+                    if (_lockedLetter.value != null && observed.lockedLetter == null) {
+                        _lockedLetter.value = null
+                    }
                     _uiState.update { current ->
                         current.copy(
                             isLoading = observed.isLoading,
@@ -100,6 +127,8 @@ class HomeViewModel(
                             appsByLetter = observed.processed.grouped,
                             letterIndexMap = observed.processed.listBuildResult.letterIndexMap,
                             availableLetters = observed.processed.listBuildResult.availableLetters,
+                            lockedLetter = observed.lockedLetter,
+                            lockedLetterApps = observed.lockedLetterApps,
                             searchQuery = observed.searchQuery,
                             searchResults = observed.searchResults,
                             hiddenSearchResults = observed.hiddenSearchResults,
@@ -214,10 +243,32 @@ class HomeViewModel(
     private data class ObservedState(
         val isLoading: Boolean,
         val processed: ProcessedAppsResult,
+        val lockedLetter: Char?,
+        val lockedLetterApps: List<AppItem>,
         val searchQuery: String,
         val searchResults: List<AppItem>,
         val hiddenSearchResults: List<AppItem>
     )
+
+    fun lockLetter(letter: Char) {
+        val available = _uiState.value.availableLetters
+        val resolved = HomeListModel.resolveTargetLetter(letter, available)
+        _lockedLetter.value = resolved
+    }
+
+    fun toggleOrLockLetter(letter: Char) {
+        val available = _uiState.value.availableLetters
+        val resolved = HomeListModel.resolveTargetLetter(letter, available)
+        _lockedLetter.value = if (resolved != null && resolved == _lockedLetter.value) {
+            null
+        } else {
+            resolved
+        }
+    }
+
+    fun clearLockedLetter() {
+        _lockedLetter.value = null
+    }
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
@@ -463,7 +514,10 @@ class HomeViewModel(
 
     fun refreshWeatherIfStale(force: Boolean = false) {
         val prefs = _uiState.value.preferences
-        if (!prefs.showWeatherInGlance || prefs.weatherLocationQuery.isBlank()) return
+        val hasWeatherWidget = prefs.homeWidgets.any {
+            it is HomeWidgetItem.BuiltIn && it.kind == BuiltInWidgetKind.WEATHER
+        }
+        if (prefs.weatherLocationQuery.isBlank() || (!prefs.showWeatherInGlance && !hasWeatherWidget)) return
         runWeatherRefresh(prefs, force = force)
     }
 
@@ -528,6 +582,135 @@ class HomeViewModel(
         }
     }
 
+    fun setDoubleTapToLockEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setDoubleTapToLockEnabled(enabled)
+        }
+    }
+
+    fun openScreenLockGuide() {
+        _uiState.update { it.copy(isScreenLockGuideVisible = true) }
+    }
+
+    fun closeScreenLockGuide() {
+        _uiState.update { it.copy(isScreenLockGuideVisible = false) }
+    }
+
+    fun openWidgetPicker(context: Context) {
+        _uiState.update {
+            it.copy(
+                isDesktopMenuVisible = false,
+                isWidgetPickerVisible = true,
+                isLoadingSystemWidgets = true
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val widgets = SystemWidgetManager.loadInstalledWidgets(context.applicationContext)
+                _uiState.update {
+                    it.copy(
+                        availableSystemWidgets = widgets,
+                        isLoadingSystemWidgets = false
+                    )
+                }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(isLoadingSystemWidgets = false) }
+            }
+        }
+    }
+
+    fun closeWidgetPicker() {
+        _uiState.update { it.copy(isWidgetPickerVisible = false) }
+    }
+
+    fun addBuiltInWidget(kind: BuiltInWidgetKind) {
+        val item = HomeWidgetItem.BuiltIn(
+            id = "builtin_${kind.storageKey}",
+            kind = kind,
+            heightDp = kind.defaultHeightDp
+        )
+        viewModelScope.launch {
+            val added = preferencesRepository.addHomeWidget(item)
+            if (!added) {
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.WidgetsFull(HomeWidgetCodec.MAX_HOME_WIDGETS))
+            }
+        }
+    }
+
+    fun addSystemWidget(
+        appWidgetId: Int,
+        providerPackage: String,
+        providerClass: String,
+        label: String,
+        heightDp: Int,
+        onRejected: () -> Unit = {}
+    ) {
+        val item = HomeWidgetItem.SystemAppWidget(
+            id = "sys_$appWidgetId",
+            appWidgetId = appWidgetId,
+            providerPackage = providerPackage,
+            providerClass = providerClass,
+            label = label,
+            heightDp = HomeWidgetCodec.clampHeightDp(heightDp)
+        )
+        viewModelScope.launch {
+            val added = preferencesRepository.addHomeWidget(item)
+            if (!added) {
+                onRejected()
+                _snackbarEvents.tryEmit(HomeSnackbarEvent.WidgetsFull(HomeWidgetCodec.MAX_HOME_WIDGETS))
+            }
+        }
+    }
+
+    fun notifyWidgetsFull() {
+        _snackbarEvents.tryEmit(HomeSnackbarEvent.WidgetsFull(HomeWidgetCodec.MAX_HOME_WIDGETS))
+    }
+
+    fun removeHomeWidget(
+        id: String,
+        onSystemWidgetRemoved: ((Int) -> Unit)? = null
+    ) {
+        val existing = _uiState.value.preferences.homeWidgets.firstOrNull { it.id == id }
+        viewModelScope.launch {
+            preferencesRepository.removeHomeWidget(id)
+            if (existing is HomeWidgetItem.SystemAppWidget) {
+                onSystemWidgetRemoved?.invoke(existing.appWidgetId)
+            }
+        }
+    }
+
+    fun moveHomeWidgetUp(id: String) {
+        viewModelScope.launch {
+            preferencesRepository.moveHomeWidget(id, -1)
+        }
+    }
+
+    fun moveHomeWidgetDown(id: String) {
+        viewModelScope.launch {
+            preferencesRepository.moveHomeWidget(id, 1)
+        }
+    }
+
+    fun resizeHomeWidget(id: String, newHeightDp: Int) {
+        viewModelScope.launch {
+            preferencesRepository.resizeHomeWidget(id, newHeightDp)
+        }
+    }
+
+    fun moveHomeSection(section: HomeSectionType, delta: Int) {
+        viewModelScope.launch {
+            preferencesRepository.moveHomeSection(section, delta)
+        }
+    }
+
+    fun moveHomeSectionUp(section: HomeSectionType) {
+        moveHomeSection(section, -1)
+    }
+
+    fun moveHomeSectionDown(section: HomeSectionType) {
+        moveHomeSection(section, 1)
+    }
+
     fun setIconStyle(style: IconStyle) {
         viewModelScope.launch {
             preferencesRepository.setIconStyle(style)
@@ -578,4 +761,5 @@ class HomeViewModel(
 sealed interface HomeSnackbarEvent {
     data class AppHidden(val app: AppItem) : HomeSnackbarEvent
     data class DesktopFull(val maxCount: Int) : HomeSnackbarEvent
+    data class WidgetsFull(val maxCount: Int) : HomeSnackbarEvent
 }
