@@ -136,8 +136,12 @@ fun LauncherSettingsBottomSheet(
 
             SettingSwitchRow(
                 icon = Icons.Outlined.Swipe,
-                title = "右手滚动条模式",
-                subtitle = if (preferences.isRightHanded) "字母波浪条位于屏幕右侧" else "字母波浪条位于屏幕左侧",
+                title = "左侧边缘隐形字母手势",
+                subtitle = if (preferences.isRightHanded) {
+                    "字母列表仅在右侧显示，左右两侧边缘均可上下滑动选字母"
+                } else {
+                    "仅在屏幕右侧字母条区域滑动选字母"
+                },
                 checked = preferences.isRightHanded,
                 onCheckedChange = onRightHandedChange
             )

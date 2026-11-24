@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,6 +50,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -65,35 +66,77 @@ import com.niagara.launcher.core.model.DesktopLayoutMath
 import com.niagara.launcher.core.model.IconAppearance
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
+import com.niagara.launcher.core.theme.IconShadowAmbient
+import com.niagara.launcher.core.theme.IconShadowSpot
+import com.niagara.launcher.core.theme.IconSpecularRim
 import com.niagara.launcher.core.theme.IosDotActive
 import com.niagara.launcher.core.theme.IosDotInactive
-import com.niagara.launcher.core.theme.IosGlassBorderBottom
-import com.niagara.launcher.core.theme.IosGlassBorderTop
-import com.niagara.launcher.core.theme.IosGlassFillBottom
-import com.niagara.launcher.core.theme.IosGlassFillTop
-import com.niagara.launcher.core.theme.IosGlassTintDark
-import com.niagara.launcher.core.theme.IosLabelShadow
+import com.niagara.launcher.core.theme.IosGlassSheenEnd
+import com.niagara.launcher.core.theme.IosGlassSheenStart
 import com.niagara.launcher.core.theme.IosPageIndicatorBg
 import com.niagara.launcher.core.theme.IosPageIndicatorBorder
+import com.niagara.launcher.core.theme.IosPillShape
 import com.niagara.launcher.core.theme.IosRemoveBadgeBg
 import com.niagara.launcher.core.theme.IosRemoveBadgeIcon
 import com.niagara.launcher.core.theme.IosRoundedCardSquircleShape
-import com.niagara.launcher.core.theme.IosSquircleShape
+import com.niagara.launcher.core.theme.LocalLauncherVisuals
 
 /**
- * iOS-style frosted glass container card with layered translucent fill,
- * blurred background sheen, and hairline specular rim border.
+ * Restrained translucent glass pill surface with a subtle 0.6dp specular rim border.
+ */
+@Composable
+fun IosGlassPill(
+    modifier: Modifier = Modifier,
+    shape: Shape = IosPillShape,
+    onClick: (() -> Unit)? = null,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+    content: @Composable RowScope.() -> Unit
+) {
+    val visuals = LocalLauncherVisuals.current
+    val clickModifier = if (onClick != null) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(shape)
+            .then(clickModifier)
+            .background(visuals.pillTint)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(visuals.pillFill, Color.White.copy(alpha = 0.06f))
+                )
+            )
+            .border(
+                width = 0.6.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(visuals.pillBorder, Color.White.copy(alpha = 0.10f))
+                ),
+                shape = shape
+            )
+            .padding(contentPadding),
+        content = content
+    )
+}
+
+/**
+ * iOS-style frosted glass container card with layered translucent depth,
+ * subtle diagonal sheen, and a crisp 0.7dp specular hairline rim.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun IosFrostedGlassCard(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 28.dp,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
+    contentPadding: PaddingValues = PaddingValues(horizontal = 15.dp, vertical = 15.dp),
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val visuals = LocalLauncherVisuals.current
     val cardShape = remember(cornerRadius) { IosRoundedCardSquircleShape(cornerRadius) }
     val interactiveModifier = if (onClick != null || onLongClick != null) {
         Modifier.combinedClickable(
@@ -110,31 +153,31 @@ fun IosFrostedGlassCard(
         modifier = modifier
             .clip(cardShape)
             .then(interactiveModifier)
-            .background(IosGlassTintDark)
+            .background(visuals.glassTint)
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(IosGlassFillTop, IosGlassFillBottom)
+                    colors = listOf(visuals.glassFillTop, visuals.glassFillBottom)
                 )
             )
             .border(
-                width = 0.8.dp,
+                width = 0.7.dp,
                 brush = Brush.verticalGradient(
-                    colors = listOf(IosGlassBorderTop, IosGlassBorderBottom)
+                    colors = listOf(visuals.glassBorderTop, visuals.glassBorderBottom)
                 ),
                 shape = cardShape
             )
     ) {
-        // Blurred internal frosted sheen kept strictly behind foreground content
+        // Soft internal frosted light diffusion strictly behind foreground content
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .blur(24.dp)
+                .blur(26.dp)
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.14f),
+                            IosGlassSheenStart,
                             Color.Transparent,
-                            Color.White.copy(alpha = 0.06f)
+                            IosGlassSheenEnd
                         )
                     )
                 )
@@ -151,7 +194,7 @@ fun IosFrostedGlassCard(
 
 /**
  * Single iOS home screen app icon tile with configurable contour, size, label visibility,
- * and jiggle edit animation with remove badge.
+ * crisp micro-specular rim, and edit-mode jiggle with remove badge.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -168,6 +211,7 @@ fun IosAppIconTile(
     showAppLabels: Boolean = true,
     iconAppearance: IconAppearance = LocalIconAppearance.current
 ) {
+    val visuals = LocalLauncherVisuals.current
     val haptic = LocalHapticFeedback.current
     val iconShape = remember(iconAppearance.iconStyle) { resolveIconShape(iconAppearance.iconStyle) }
     val applyFrameChrome = iconAppearance.iconPackPackage == null && iconAppearance.iconStyle != IconStyle.ADAPTIVE
@@ -179,8 +223,8 @@ fun IosAppIconTile(
         val direction = if (index % 2 == 0) 1f else -1f
         val durationMs = 240 + (index % 4) * 14
         val angle by infiniteTransition.animateFloat(
-            initialValue = -2.1f * direction,
-            targetValue = 2.1f * direction,
+            initialValue = -1.9f * direction,
+            targetValue = 1.9f * direction,
             animationSpec = infiniteRepeatable(
                 animation = tween(durationMillis = durationMs, easing = LinearEasing),
                 repeatMode = RepeatMode.Reverse
@@ -188,8 +232,8 @@ fun IosAppIconTile(
             label = "jiggleAngle"
         )
         val offsetY by infiniteTransition.animateFloat(
-            initialValue = -0.8f,
-            targetValue = 0.8f,
+            initialValue = -0.7f,
+            targetValue = 0.7f,
             animationSpec = infiniteRepeatable(
                 animation = tween(durationMillis = durationMs + 30, easing = LinearEasing),
                 repeatMode = RepeatMode.Reverse
@@ -245,14 +289,14 @@ fun IosAppIconTile(
                         if (applyFrameChrome) {
                             Modifier
                                 .shadow(
-                                    elevation = 6.dp,
+                                    elevation = 7.dp,
                                     shape = iconShape,
-                                    ambientColor = Color.Black.copy(alpha = 0.45f),
-                                    spotColor = Color.Black.copy(alpha = 0.55f)
+                                    ambientColor = IconShadowAmbient,
+                                    spotColor = IconShadowSpot
                                 )
                                 .border(
                                     width = 0.5.dp,
-                                    color = Color.White.copy(alpha = 0.16f),
+                                    color = IconSpecularRim,
                                     shape = iconShape
                                 )
                         } else {
@@ -275,9 +319,10 @@ fun IosAppIconTile(
                             .align(Alignment.TopStart)
                             .offset(x = (-1).dp, y = (-1).dp)
                             .size(21.dp)
-                            .shadow(2.dp, CircleShape)
+                            .shadow(3.dp, CircleShape)
                             .clip(CircleShape)
                             .background(IosRemoveBadgeBg)
+                            .border(0.5.dp, Color.White.copy(alpha = 0.65f), CircleShape)
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onRemoveClick()
@@ -303,13 +348,13 @@ fun IosAppIconTile(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.labelSmall.copy(
-                    color = Color.White,
+                    color = visuals.textPrimary,
                     fontSize = DesktopLayoutMath.labelFontSizeSp(gridColumns).sp,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 0.sp,
                     shadow = Shadow(
-                        color = IosLabelShadow,
-                        offset = Offset(0f, 1.5f),
+                        color = visuals.labelShadow,
+                        offset = Offset(0f, 1.4f),
                         blurRadius = 4f
                     )
                 ),
@@ -322,7 +367,7 @@ fun IosAppIconTile(
 }
 
 /**
- * Dashed/frosted "+" add slot matching iOS icon geometry.
+ * Restrained frosted "+" add slot matching iOS icon geometry.
  */
 @Composable
 fun IosAddIconSlot(
@@ -334,6 +379,7 @@ fun IosAddIconSlot(
     showAppLabels: Boolean = true,
     iconStyle: IconStyle = LocalIconAppearance.current.iconStyle
 ) {
+    val visuals = LocalLauncherVisuals.current
     val slotShape = remember(iconStyle) {
         if (iconStyle == IconStyle.ADAPTIVE) RoundedCornerShape(14.dp) else resolveIconShape(iconStyle)
     }
@@ -367,18 +413,24 @@ fun IosAddIconSlot(
                     modifier = Modifier
                         .size(effectiveIconDp)
                         .clip(slotShape)
-                        .background(Color.White.copy(alpha = 0.14f))
+                        .background(visuals.pillTint)
+                        .background(Color.White.copy(alpha = 0.10f))
                         .border(
-                            width = 1.dp,
-                            color = Color.White.copy(alpha = 0.30f),
+                            width = 0.75.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.34f),
+                                    Color.White.copy(alpha = 0.14f)
+                                )
+                            ),
                             shape = slotShape
                         )
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Add,
                         contentDescription = label,
-                        tint = Color.White.copy(alpha = 0.9f),
-                        modifier = Modifier.size((effectiveIconDp * 0.46f).coerceAtLeast(18.dp))
+                        tint = visuals.textPrimary.copy(alpha = 0.9f),
+                        modifier = Modifier.size((effectiveIconDp * 0.44f).coerceAtLeast(18.dp))
                     )
                 }
             }
@@ -393,13 +445,13 @@ fun IosAddIconSlot(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.labelSmall.copy(
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = visuals.textSecondary,
                     fontSize = DesktopLayoutMath.labelFontSizeSp(gridColumns).sp,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 0.sp,
                     shadow = Shadow(
-                        color = IosLabelShadow,
-                        offset = Offset(0f, 1.5f),
+                        color = visuals.labelShadow,
+                        offset = Offset(0f, 1.4f),
                         blurRadius = 4f
                     )
                 ),
@@ -428,6 +480,7 @@ fun IosFavoritesCard(
     showAppLabels: Boolean = true,
     iconAppearance: IconAppearance = LocalIconAppearance.current
 ) {
+    val visuals = LocalLauncherVisuals.current
     val haptic = LocalHapticFeedback.current
     val columns = LauncherPreferences.normalizeGridColumns(gridColumns)
     val horizontalSpacing = DesktopLayoutMath.horizontalSpacingDp(columns).dp
@@ -435,7 +488,7 @@ fun IosFavoritesCard(
     IosFrostedGlassCard(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = 28.dp,
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(horizontal = 15.dp, vertical = 14.dp),
         onLongClick = {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             onOpenFavoritesPicker()
@@ -444,45 +497,40 @@ fun IosFavoritesCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = "常用应用",
                 style = MaterialTheme.typography.labelSmall.copy(
-                    color = Color.White.copy(alpha = 0.88f),
-                    fontSize = 13.sp,
+                    color = visuals.textSecondary,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.2.sp
+                    letterSpacing = 0.4.sp
                 )
             )
 
-            Surface(
+            IosGlassPill(
                 onClick = onOpenFavoritesPicker,
-                shape = RoundedCornerShape(50),
-                color = Color.White.copy(alpha = 0.16f)
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp)
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = null,
+                    tint = visuals.textPrimary,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = if (favorites.isEmpty()) "添加" else "管理",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = visuals.textPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.1.sp
                     )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = if (favorites.isEmpty()) "添加" else "管理",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                }
+                )
             }
         }
 
@@ -512,19 +560,20 @@ fun IosFavoritesCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "固定常用应用到这里",
+                        text = "收纳常用应用",
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            color = Color.White.copy(alpha = 0.9f),
+                            color = visuals.textPrimary,
                             fontWeight = FontWeight.Medium
                         )
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
-                        text = "长按此卡片或点击右上角即可添加/移除常用应用",
+                        text = "长按卡片或点右上角管理，支持长按图标自由拖动排序",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color.White.copy(alpha = 0.62f),
+                            color = visuals.textTertiary,
                             fontWeight = FontWeight.Normal,
-                            letterSpacing = 0.sp
+                            letterSpacing = 0.sp,
+                            lineHeight = 16.sp
                         )
                     )
                 }
@@ -596,6 +645,7 @@ fun IosDesktopGrid(
     showAppLabels: Boolean = true,
     iconAppearance: IconAppearance = LocalIconAppearance.current
 ) {
+    val visuals = LocalLauncherVisuals.current
     val columns = LauncherPreferences.normalizeGridColumns(gridColumns)
     val horizontalSpacing = DesktopLayoutMath.horizontalSpacingDp(columns).dp
     val visibleDesktopApps = desktopApps.take(maxDesktopApps)
@@ -603,8 +653,8 @@ fun IosDesktopGrid(
     if (visibleDesktopApps.isEmpty() && !isEditMode) {
         IosFrostedGlassCard(
             modifier = modifier.fillMaxWidth(),
-            cornerRadius = 24.dp,
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
+            cornerRadius = 26.dp,
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 26.dp),
             onClick = onOpenDesktopPicker,
             onLongClick = onOpenDesktopMenu
         ) {
@@ -615,14 +665,14 @@ fun IosDesktopGrid(
                 Icon(
                     imageVector = Icons.Rounded.AddCircleOutline,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.85f),
-                    modifier = Modifier.size(34.dp)
+                    tint = visuals.textSecondary,
+                    modifier = Modifier.size(32.dp)
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "桌面图标区 (${columns}×${LauncherPreferences.DESKTOP_GRID_ROWS})",
                     style = MaterialTheme.typography.titleSmall.copy(
-                        color = Color.White,
+                        color = visuals.textPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
                 )
@@ -631,7 +681,7 @@ fun IosDesktopGrid(
                     text = "点击添加桌面应用，或长按桌面空白处打开菜单",
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = Color.White.copy(alpha = 0.68f)
+                        color = visuals.textTertiary
                     )
                 )
             }
@@ -701,12 +751,12 @@ fun IosPageIndicator(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
         modifier = modifier
             .clip(CircleShape)
             .background(IosPageIndicatorBg)
             .border(0.6.dp, IosPageIndicatorBorder, CircleShape)
-            .padding(horizontal = 14.dp, vertical = 7.dp)
+            .padding(horizontal = 13.dp, vertical = 6.dp)
     ) {
         for (page in 0 until pageCount) {
             val isSelected = page == currentPage
@@ -721,7 +771,7 @@ fun IosPageIndicator(
 
             Box(
                 modifier = Modifier
-                    .height(6.dp)
+                    .height(5.5.dp)
                     .width(dotWidth)
                     .clip(CircleShape)
                     .background(dotColor)

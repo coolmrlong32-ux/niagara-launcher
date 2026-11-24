@@ -1,5 +1,6 @@
 package com.niagara.launcher.core.theme
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
@@ -154,3 +155,9 @@ class IosRoundedCardSquircleShape(
 
     override fun hashCode(): Int = cornerRadiusDp.hashCode()
 }
+
+/**
+ * Shared pill and subtle tile shapes for consistent launcher geometry.
+ */
+val IosPillShape: Shape = RoundedCornerShape(50)
+val IosSubtleTileShape: Shape = RoundedCornerShape(16.dp)

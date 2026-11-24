@@ -16,6 +16,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,7 +29,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BatteryFull
@@ -37,7 +37,6 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -59,14 +57,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.LauncherPreferences
-import com.niagara.launcher.core.theme.IosLabelShadow
+import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Independent iOS-style Home page featuring a compact header, Frosted Glass Favorites Card,
+ * Independent iOS-style Home page featuring a refined translucent header, Frosted Glass Favorites Card,
  * and configurable 4x6 / 5x6 Desktop App Grid.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -117,7 +115,7 @@ fun IosHomePage(
                 .navigationBarsPadding()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
-                .padding(top = 12.dp, bottom = 72.dp)
+                .padding(top = 14.dp, bottom = 76.dp)
         ) {
             if (isEditMode) {
                 IosEditModeHeader(
@@ -134,7 +132,7 @@ fun IosHomePage(
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             AnimatedVisibility(
                 visible = preferences.showFavoritesBar,
@@ -155,7 +153,7 @@ fun IosHomePage(
                         iconAppearance = preferences.iconAppearance
                     )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(22.dp))
                 }
             }
 
@@ -184,63 +182,57 @@ private fun IosEditModeHeader(
     onAddClick: () -> Unit,
     onDoneClick: () -> Unit
 ) {
+    val visuals = LocalLauncherVisuals.current
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 2.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Surface(
+        IosGlassPill(
             onClick = onAddClick,
-            shape = RoundedCornerShape(50),
-            color = Color.White.copy(alpha = 0.22f)
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "添加桌面应用",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = "添加桌面应用",
+                tint = visuals.textPrimary,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "添加",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    color = visuals.textPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "添加",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                )
-            }
+            )
         }
 
         Text(
             text = "编辑桌面 ($desktopCount/$maxDesktopCount)",
             style = MaterialTheme.typography.labelSmall.copy(
-                color = Color.White.copy(alpha = 0.9f),
+                color = visuals.textSecondary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-                shadow = Shadow(color = IosLabelShadow, offset = Offset(0f, 1f), blurRadius = 3f)
+                shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 1f), blurRadius = 3f)
             )
         )
 
-        Surface(
+        IosGlassPill(
             onClick = onDoneClick,
-            shape = RoundedCornerShape(50),
-            color = Color.White.copy(alpha = 0.28f)
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         ) {
             Text(
                 text = "完成",
                 style = MaterialTheme.typography.labelSmall.copy(
-                    color = Color.White,
+                    color = visuals.textPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
-                ),
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
             )
         }
     }
@@ -253,6 +245,7 @@ private fun IosNormalHeader(
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val visuals = LocalLauncherVisuals.current
     var currentTime by remember { mutableStateOf("") }
     var currentDate by remember { mutableStateOf("") }
     var batteryPercentage by remember { mutableIntStateOf(100) }
@@ -299,19 +292,21 @@ private fun IosNormalHeader(
             Text(
                 text = currentTime.ifEmpty { "12:00" },
                 style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Light,
-                    color = Color.White,
-                    shadow = Shadow(color = IosLabelShadow, offset = Offset(0f, 1.5f), blurRadius = 5f)
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.ExtraLight,
+                    letterSpacing = (-0.8).sp,
+                    color = visuals.textPrimary,
+                    shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 1.6f), blurRadius = 6f)
                 )
             )
+            Spacer(modifier = Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = currentDate,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = Color.White.copy(alpha = 0.88f),
+                        color = visuals.textSecondary,
                         fontWeight = FontWeight.Medium,
-                        shadow = Shadow(color = IosLabelShadow, offset = Offset(0f, 1f), blurRadius = 3f)
+                        shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 1f), blurRadius = 3.5f)
                     )
                 )
                 if (showBattery) {
@@ -319,15 +314,16 @@ private fun IosNormalHeader(
                     Icon(
                         imageVector = Icons.Outlined.BatteryFull,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.8f),
+                        tint = visuals.textSecondary,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
                         text = "$batteryPercentage%",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = Color.White.copy(alpha = 0.88f),
-                            shadow = Shadow(color = IosLabelShadow, offset = Offset(0f, 1f), blurRadius = 3f)
+                            color = visuals.textSecondary,
+                            fontWeight = FontWeight.Medium,
+                            shadow = Shadow(color = visuals.labelShadow, offset = Offset(0f, 1f), blurRadius = 3.5f)
                         )
                     )
                 }
@@ -338,44 +334,37 @@ private fun IosNormalHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Surface(
+            IosGlassPill(
                 onClick = onSearchClick,
-                shape = RoundedCornerShape(50),
-                color = Color.White.copy(alpha = 0.16f)
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Search,
-                        contentDescription = "搜索",
-                        tint = Color.White,
-                        modifier = Modifier.size(15.dp)
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = "搜索",
+                    tint = visuals.textPrimary,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "搜索",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = visuals.textPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "搜索",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                    )
-                }
+                )
             }
 
-            Surface(
-                onClick = onSettingsClick,
+            IosGlassPill(
                 shape = CircleShape,
-                color = Color.White.copy(alpha = 0.14f)
+                onClick = onSettingsClick,
+                contentPadding = PaddingValues(8.dp)
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Tune,
                     contentDescription = "启动器设置",
-                    tint = Color.White.copy(alpha = 0.92f),
-                    modifier = Modifier
-                        .padding(7.dp)
-                        .size(16.dp)
+                    tint = visuals.textPrimary.copy(alpha = 0.92f),
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

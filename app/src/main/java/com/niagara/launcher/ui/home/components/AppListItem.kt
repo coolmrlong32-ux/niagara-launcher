@@ -3,6 +3,7 @@ package com.niagara.launcher.ui.home.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -13,9 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,8 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -42,7 +45,13 @@ import com.niagara.launcher.core.data.LocalAppIconCache
 import com.niagara.launcher.core.data.LocalIconAppearance
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.IconStyle
+import com.niagara.launcher.core.theme.AccentWarmGold
+import com.niagara.launcher.core.theme.IconShadowAmbient
+import com.niagara.launcher.core.theme.IconShadowSpot
+import com.niagara.launcher.core.theme.IconSpecularRim
 import com.niagara.launcher.core.theme.IosSquircleShape
+import com.niagara.launcher.core.theme.IosSubtleTileShape
+import com.niagara.launcher.core.theme.LocalLauncherVisuals
 
 /**
  * Resolves the Compose clipping [Shape] corresponding to a built-in [IconStyle].
@@ -56,7 +65,8 @@ fun resolveIconShape(iconStyle: IconStyle): Shape {
 }
 
 /**
- * Standard Niagara style single-column application list item.
+ * Refined Niagara-style single-column application list item with crisp icon rim,
+ * soft elevation, and wallpaper-adaptive text legibility.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -66,42 +76,73 @@ fun AppListItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val visuals = LocalLauncherVisuals.current
+    val iconAppearance = LocalIconAppearance.current
+    val iconShape = remember(iconAppearance.iconStyle) { resolveIconShape(iconAppearance.iconStyle) }
+    val applyFrameChrome = iconAppearance.iconPackPackage == null && iconAppearance.iconStyle != IconStyle.ADAPTIVE
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 1.dp)
+            .clip(IosSubtleTileShape)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .padding(horizontal = 24.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // App icon loaded asynchronously from AppIconCache
-        AppIcon(app = app, modifier = Modifier.size(42.dp))
+        val iconModifier = Modifier
+            .size(40.dp)
+            .then(
+                if (applyFrameChrome) {
+                    Modifier
+                        .shadow(
+                            elevation = 4.dp,
+                            shape = iconShape,
+                            ambientColor = IconShadowAmbient,
+                            spotColor = IconShadowSpot
+                        )
+                        .border(
+                            width = 0.5.dp,
+                            color = IconSpecularRim,
+                            shape = iconShape
+                        )
+                } else {
+                    Modifier
+                }
+            )
 
-        Spacer(modifier = Modifier.width(16.dp))
+        AppIcon(app = app, shape = iconShape, modifier = iconModifier)
 
-        // App title
+        Spacer(modifier = Modifier.width(15.dp))
+
         Text(
             text = app.label,
             style = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = 17.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Normal,
-                color = Color.White
+                letterSpacing = 0.05.sp,
+                color = visuals.textPrimary,
+                shadow = Shadow(
+                    color = visuals.labelShadow,
+                    offset = Offset(0f, 1.2f),
+                    blurRadius = 3.5f
+                )
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
 
-        // Favorite badge indicator
         if (app.isFavorite) {
+            Spacer(modifier = Modifier.width(8.dp))
             Icon(
-                imageVector = Icons.Default.Star,
-                contentDescription = "Favorite",
-                tint = Color(0xFFFFD54F),
-                modifier = Modifier.size(16.dp)
+                imageVector = Icons.Rounded.Star,
+                contentDescription = "常用应用",
+                tint = AccentWarmGold.copy(alpha = 0.88f),
+                modifier = Modifier.size(14.dp)
             )
         }
     }
