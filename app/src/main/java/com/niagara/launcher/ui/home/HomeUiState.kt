@@ -22,6 +22,8 @@ data class HomeUiState(
     val appsByLetter: Map<Char, List<AppItem>> = emptyMap(),
     val letterIndexMap: Map<Char, Int> = emptyMap(),
     val availableLetters: Set<Char> = emptySet(),
+    val lockedLetter: Char? = null,
+    val lockedLetterApps: List<AppItem> = emptyList(),
     val searchQuery: String = "",
     val searchResults: List<AppItem> = emptyList(),
     val hiddenSearchResults: List<AppItem> = emptyList(),

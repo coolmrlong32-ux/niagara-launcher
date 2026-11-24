@@ -42,6 +42,7 @@ class HomeViewModel(
 
     private val _searchQuery = MutableStateFlow("")
     private val _liveIconSizeOverride = MutableStateFlow<Float?>(null)
+    private val _lockedLetter = MutableStateFlow<Char?>(null)
     private var iconSizePersistJob: Job? = null
     private var weatherRefreshJob: Job? = null
 
@@ -56,19 +57,34 @@ class HomeViewModel(
 
     private fun observeData() {
         viewModelScope.launch {
-            combine(
+            val baseDataFlow = combine(
                 appRepository.installedAppsFlow,
                 appRepository.isLoaded,
-                preferencesRepository.launcherPreferencesFlow,
+                preferencesRepository.launcherPreferencesFlow
+            ) { installedApps, isLoaded, prefs ->
+                Triple(installedApps, isLoaded, prefs)
+            }
+            val uiInputsFlow = combine(
                 _searchQuery,
-                _liveIconSizeOverride
-            ) { installedApps, isLoaded, prefs, query, liveIconSize ->
+                _liveIconSizeOverride,
+                _lockedLetter
+            ) { query, liveIconSize, lockedLetter ->
+                Triple(query, liveIconSize, lockedLetter)
+            }
+
+            combine(baseDataFlow, uiInputsFlow) { (installedApps, isLoaded, prefs), (query, liveIconSize, lockedLetter) ->
                 val effectivePrefs = if (liveIconSize != null) {
                     prefs.copy(desktopIconSizeDp = liveIconSize)
                 } else {
                     prefs
                 }
                 val processed = processApps(installedApps, effectivePrefs)
+                val resolvedLockedLetter = lockedLetter?.let {
+                    HomeListModel.resolveTargetLetter(it, processed.grouped.keys)
+                }
+                val lockedApps = resolvedLockedLetter?.let {
+                    processed.grouped[it].orEmpty()
+                }.orEmpty()
                 val searchResults = if (query.isBlank()) {
                     emptyList()
                 } else {
@@ -82,6 +98,8 @@ class HomeViewModel(
                 ObservedState(
                     isLoading = !isLoaded,
                     processed = processed,
+                    lockedLetter = resolvedLockedLetter,
+                    lockedLetterApps = lockedApps,
                     searchQuery = query,
                     searchResults = searchResults,
                     hiddenSearchResults = hiddenSearchResults
@@ -89,6 +107,9 @@ class HomeViewModel(
             }
                 .flowOn(Dispatchers.Default)
                 .collect { observed ->
+                    if (_lockedLetter.value != null && observed.lockedLetter == null) {
+                        _lockedLetter.value = null
+                    }
                     _uiState.update { current ->
                         current.copy(
                             isLoading = observed.isLoading,
@@ -100,6 +121,8 @@ class HomeViewModel(
                             appsByLetter = observed.processed.grouped,
                             letterIndexMap = observed.processed.listBuildResult.letterIndexMap,
                             availableLetters = observed.processed.listBuildResult.availableLetters,
+                            lockedLetter = observed.lockedLetter,
+                            lockedLetterApps = observed.lockedLetterApps,
                             searchQuery = observed.searchQuery,
                             searchResults = observed.searchResults,
                             hiddenSearchResults = observed.hiddenSearchResults,
@@ -214,10 +237,32 @@ class HomeViewModel(
     private data class ObservedState(
         val isLoading: Boolean,
         val processed: ProcessedAppsResult,
+        val lockedLetter: Char?,
+        val lockedLetterApps: List<AppItem>,
         val searchQuery: String,
         val searchResults: List<AppItem>,
         val hiddenSearchResults: List<AppItem>
     )
+
+    fun lockLetter(letter: Char) {
+        val available = _uiState.value.availableLetters
+        val resolved = HomeListModel.resolveTargetLetter(letter, available)
+        _lockedLetter.value = resolved
+    }
+
+    fun toggleOrLockLetter(letter: Char) {
+        val available = _uiState.value.availableLetters
+        val resolved = HomeListModel.resolveTargetLetter(letter, available)
+        _lockedLetter.value = if (resolved != null && resolved == _lockedLetter.value) {
+            null
+        } else {
+            resolved
+        }
+    }
+
+    fun clearLockedLetter() {
+        _lockedLetter.value = null
+    }
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query

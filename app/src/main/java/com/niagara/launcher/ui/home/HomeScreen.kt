@@ -13,17 +13,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -33,12 +25,10 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,18 +36,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.niagara.launcher.core.data.LocalIconAppearance
@@ -66,15 +51,12 @@ import com.niagara.launcher.core.system.ScreenLockController
 import com.niagara.launcher.core.system.ScreenLockResult
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
 import com.niagara.launcher.core.transition.LaunchSourceBounds
-import com.niagara.launcher.ui.home.components.AlphabetWaveBar
+import com.niagara.launcher.ui.home.components.AllAppsDrawerPage
 import com.niagara.launcher.ui.home.components.AppActionBottomSheet
-import com.niagara.launcher.ui.home.components.AppListItem
 import com.niagara.launcher.ui.home.components.AppPickerBottomSheet
 import com.niagara.launcher.ui.home.components.DesktopMenuBottomSheet
 import com.niagara.launcher.ui.home.components.DesktopSettingsScreen
-import com.niagara.launcher.ui.home.components.GlanceWidget
 import com.niagara.launcher.ui.home.components.IconPickerScreen
-import com.niagara.launcher.ui.home.components.InvisibleLeftAlphabetHotspot
 import com.niagara.launcher.ui.home.components.IosHomePage
 import com.niagara.launcher.ui.home.components.IosPageIndicator
 import com.niagara.launcher.ui.home.components.LauncherSettingsBottomSheet
@@ -109,8 +91,8 @@ fun HomeScreen(
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    var leftEdgeFocusedLetter by remember { mutableStateOf<Char?>(null) }
     var isHomeIconDragging by remember { mutableStateOf(false) }
+    var isAlphabetScrubbing by remember { mutableStateOf(false) }
 
     // Foreground-only low-frequency device telemetry (RAM usage, battery temp & level)
     val deviceStatus = rememberForegroundDeviceStatus(
@@ -191,16 +173,20 @@ fun HomeScreen(
             viewModel.closeSettings()
             viewModel.setSearching(false)
             viewModel.setHomeEditMode(false)
+            viewModel.clearLockedLetter()
             if (pagerState.currentPage != 0) {
                 pagerState.animateScrollToPage(0)
             }
         }
     }
 
-    // Exit desktop edit mode automatically when swiping away from page 0
+    // Exit desktop edit mode or letter lock automatically when swiping between pages
     LaunchedEffect(pagerState.currentPage) {
         if (pagerState.currentPage != 0 && uiState.isHomeEditMode) {
             viewModel.setHomeEditMode(false)
+        }
+        if (pagerState.currentPage != 1 && uiState.lockedLetter != null) {
+            viewModel.clearLockedLetter()
         }
     }
 
@@ -229,20 +215,13 @@ fun HomeScreen(
         }
     }
 
-    // Track current visible A-Z letter section while scrolling
-    val activeSectionLetter by remember(uiState.listEntries) {
-        derivedStateOf {
-            val firstIdx = listState.firstVisibleItemIndex
-            uiState.listEntries.getOrNull(firstIdx)?.sectionLetter
-        }
-    }
-
-    // Handle system back button in priority order: Lock Guide -> Icon Picker -> Desktop Settings -> Search -> Edit Mode -> Drawer Scroll -> Home Page
+    // Handle system back button in priority order: Lock Guide -> Icon Picker -> Desktop Settings -> Search -> Locked Letter -> Edit Mode -> Drawer Scroll -> Home Page
     BackHandler(
         enabled = uiState.isScreenLockGuideVisible ||
             uiState.isIconPickerVisible ||
             uiState.isDesktopSettingsVisible ||
             uiState.isSearching ||
+            uiState.lockedLetter != null ||
             uiState.isHomeEditMode ||
             pagerState.currentPage != 0 ||
             listState.firstVisibleItemIndex > 0
@@ -252,6 +231,7 @@ fun HomeScreen(
             uiState.isIconPickerVisible -> viewModel.closeIconPicker()
             uiState.isDesktopSettingsVisible -> viewModel.closeDesktopSettings()
             uiState.isSearching -> viewModel.setSearching(false)
+            uiState.lockedLetter != null -> viewModel.clearLockedLetter()
             uiState.isHomeEditMode -> viewModel.setHomeEditMode(false)
             pagerState.currentPage == 1 && listState.firstVisibleItemIndex > 0 -> {
                 coroutineScope.launch {
@@ -284,13 +264,8 @@ fun HomeScreen(
         }
     }
 
-    val onLetterSelected: (Char) -> Unit = { letter ->
-        val targetIndex = HomeListModel.resolveTargetLetterIndex(letter, uiState.letterIndexMap)
-        if (targetIndex != null) {
-            coroutineScope.launch {
-                listState.scrollToItem(targetIndex)
-            }
-        }
+    val letterCounts = remember(uiState.appsByLetter) {
+        uiState.appsByLetter.mapValues { it.value.size }
     }
 
     val previewApps = remember(uiState.favorites, uiState.desktopApps, uiState.allApps) {
@@ -333,7 +308,8 @@ fun HomeScreen(
                         userScrollEnabled = !uiState.isSearching &&
                             !uiState.isDesktopSettingsVisible &&
                             !uiState.isIconPickerVisible &&
-                            !isHomeIconDragging,
+                            !isHomeIconDragging &&
+                            !isAlphabetScrubbing,
                         modifier = Modifier.fillMaxSize()
                     ) { page ->
                         when (page) {
@@ -366,117 +342,34 @@ fun HomeScreen(
                             }
 
                             else -> {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .statusBarsPadding()
-                                        .navigationBarsPadding()
-                                ) {
-                                    // Single-source-of-truth LazyColumn with end clearance for the visible right bar
-                                    LazyColumn(
-                                        state = listState,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(end = 30.dp)
-                                    ) {
-                                        items(
-                                            items = uiState.listEntries,
-                                            key = { it.listKey },
-                                            contentType = { entry ->
-                                                when (entry) {
-                                                    HomeListEntry.Glance -> "glance"
-                                                    HomeListEntry.FavoritesHeader -> "fav_header"
-                                                    is HomeListEntry.FavoriteApp -> "app_item"
-                                                    HomeListEntry.FavoritesDivider -> "divider"
-                                                    is HomeListEntry.LetterHeader -> "letter_header"
-                                                    is HomeListEntry.DrawerApp -> "app_item"
-                                                    HomeListEntry.BottomSpacer -> "spacer"
-                                                }
-                                            }
-                                        ) { entry ->
-                                            when (entry) {
-                                                HomeListEntry.Glance -> {
-                                                    GlanceWidget(
-                                                        showBattery = uiState.preferences.showBatteryInGlance,
-                                                        showDeviceStatus = uiState.preferences.showDeviceStatusInGlance,
-                                                        showWeather = uiState.preferences.showWeatherInGlance,
-                                                        deviceStatus = deviceStatus,
-                                                        weather = uiState.preferences.cachedWeather,
-                                                        weatherLocationQuery = uiState.preferences.weatherLocationQuery,
-                                                        isWeatherRefreshing = uiState.isWeatherRefreshing,
-                                                        onWeatherClick = onWeatherTap,
-                                                        onWeatherLongClick = { viewModel.openWeatherConfigDialog() },
-                                                        onSearchClick = { viewModel.setSearching(true) },
-                                                        onSettingsClick = { viewModel.openSettings() }
-                                                    )
-                                                }
-
-                                                HomeListEntry.FavoritesHeader -> {
-                                                    DrawerSectionHeader(
-                                                        title = "常用",
-                                                        accentColor = visuals.textSecondary
-                                                    )
-                                                }
-
-                                                is HomeListEntry.FavoriteApp -> {
-                                                    AppListItem(
-                                                        app = entry.app,
-                                                        onClickWithBounds = { bounds ->
-                                                            launchWithTransition(entry.app, bounds)
-                                                        },
-                                                        onLongClick = { viewModel.openAppMenu(entry.app) }
-                                                    )
-                                                }
-
-                                                HomeListEntry.FavoritesDivider -> {
-                                                    Spacer(modifier = Modifier.height(14.dp))
-                                                }
-
-                                                is HomeListEntry.LetterHeader -> {
-                                                    DrawerSectionHeader(
-                                                        title = entry.letter.toString(),
-                                                        accentColor = visuals.accent
-                                                    )
-                                                }
-
-                                                is HomeListEntry.DrawerApp -> {
-                                                    AppListItem(
-                                                        app = entry.app,
-                                                        onClickWithBounds = { bounds ->
-                                                            launchWithTransition(entry.app, bounds)
-                                                        },
-                                                        onLongClick = { viewModel.openAppMenu(entry.app) }
-                                                    )
-                                                }
-
-                                                HomeListEntry.BottomSpacer -> {
-                                                    Spacer(modifier = Modifier.height(88.dp))
-                                                }
-                                            }
+                                AllAppsDrawerPage(
+                                    listEntries = uiState.listEntries,
+                                    allAppsCount = uiState.allApps.size,
+                                    availableLetters = uiState.availableLetters,
+                                    letterCounts = letterCounts,
+                                    lockedLetter = uiState.lockedLetter,
+                                    lockedApps = uiState.lockedLetterApps,
+                                    listState = listState,
+                                    isRightHanded = uiState.preferences.isRightHanded,
+                                    hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
+                                    doubleTapToLockEnabled = uiState.preferences.doubleTapToLockEnabled,
+                                    isOverlayBlocking = isOverlayBlocking,
+                                    onLaunchApp = { app, bounds -> launchWithTransition(app, bounds) },
+                                    onOpenAppMenu = { viewModel.openAppMenu(it) },
+                                    onLetterSelected = { letter -> viewModel.lockLetter(letter) },
+                                    onLetterLocked = { letter ->
+                                        if (letter == null) {
+                                            viewModel.clearLockedLetter()
+                                        } else {
+                                            viewModel.lockLetter(letter)
                                         }
-                                    }
-
-                                    // Left edge: completely invisible vertical alphabet scrubbing hotspot
-                                    if (uiState.preferences.isRightHanded) {
-                                        InvisibleLeftAlphabetHotspot(
-                                            hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
-                                            onLetterSelected = onLetterSelected,
-                                            onFocusedLetterChanged = { leftEdgeFocusedLetter = it },
-                                            modifier = Modifier.align(Alignment.CenterStart)
-                                        )
-                                    }
-
-                                    // Right edge: sole visible compact one-handed alphabet wave bar
-                                    AlphabetWaveBar(
-                                        isRightHanded = true,
-                                        hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
-                                        availableLetters = uiState.availableLetters,
-                                        activeLetter = activeSectionLetter,
-                                        externalFocusedLetter = leftEdgeFocusedLetter,
-                                        onLetterSelected = onLetterSelected,
-                                        modifier = Modifier.align(Alignment.CenterEnd)
-                                    )
-                                }
+                                    },
+                                    onClearLockedLetter = { viewModel.clearLockedLetter() },
+                                    onSearchClick = { viewModel.setSearching(true) },
+                                    onSettingsClick = { viewModel.openSettings() },
+                                    onScrubStateChanged = { isAlphabetScrubbing = it },
+                                    onDoubleTapLock = onDoubleTapLock
+                                )
                             }
                         }
                     }
@@ -677,48 +570,5 @@ fun HomeScreen(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun DrawerSectionHeader(
-    title: String,
-    accentColor: Color
-) {
-    val visuals = LocalLauncherVisuals.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 5.dp)
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelSmall.copy(
-                color = accentColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.5.sp,
-                letterSpacing = 0.6.sp,
-                shadow = Shadow(
-                    color = visuals.labelShadow,
-                    offset = Offset(0f, 1f),
-                    blurRadius = 3f
-                )
-            )
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(0.5.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.16f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
     }
 }

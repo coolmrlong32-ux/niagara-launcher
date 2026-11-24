@@ -128,4 +128,46 @@ object HomeListModel {
         }
         return bestIndex
     }
+
+    /**
+     * Resolves [letter] to itself when populated, or the nearest populated letter in [ALPHABET].
+     */
+    fun resolveTargetLetter(
+        letter: Char,
+        availableLetters: Set<Char>
+    ): Char? {
+        if (availableLetters.isEmpty()) return null
+        if (availableLetters.contains(letter)) return letter
+
+        val targetPos = ALPHABET.indexOf(letter)
+        if (targetPos < 0) {
+            return ALPHABET.firstOrNull { availableLetters.contains(it) }
+                ?: availableLetters.firstOrNull()
+        }
+
+        var bestLetter: Char? = null
+        var bestDistance = Int.MAX_VALUE
+        for (candidate in availableLetters) {
+            val candidatePos = ALPHABET.indexOf(candidate)
+            if (candidatePos >= 0) {
+                val dist = kotlin.math.abs(candidatePos - targetPos)
+                if (dist < bestDistance) {
+                    bestDistance = dist
+                    bestLetter = candidate
+                }
+            }
+        }
+        return bestLetter ?: availableLetters.firstOrNull()
+    }
+
+    /**
+     * Returns the apps belonging to [letter] (or nearest populated fallback letter).
+     */
+    fun buildLockedApps(
+        letter: Char,
+        appsByLetter: Map<Char, List<AppItem>>
+    ): List<AppItem> {
+        val resolved = resolveTargetLetter(letter, appsByLetter.keys) ?: return emptyList()
+        return appsByLetter[resolved].orEmpty()
+    }
 }
