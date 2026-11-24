@@ -1,5 +1,6 @@
 package com.niagara.launcher.ui.home
 
+import android.view.View
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,7 @@ import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.IconStyle
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.search.AppSearchEngine
+import com.niagara.launcher.core.transition.LaunchSourceBounds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -307,8 +309,12 @@ class HomeViewModel(
         _uiState.update { it.copy(isSettingsSheetVisible = false) }
     }
 
-    fun launchApp(app: AppItem) {
-        appRepository.launchApp(app)
+    fun launchApp(
+        app: AppItem,
+        anchorView: View? = null,
+        sourceBounds: LaunchSourceBounds? = null
+    ): Boolean {
+        return appRepository.launchApp(app, anchorView, sourceBounds)
     }
 
     fun toggleFavorite(app: AppItem) {

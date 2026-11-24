@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +54,8 @@ import com.niagara.launcher.core.theme.IconSpecularRim
 import com.niagara.launcher.core.theme.IosSquircleShape
 import com.niagara.launcher.core.theme.IosSubtleTileShape
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
+import com.niagara.launcher.core.transition.LaunchBoundsRef
+import com.niagara.launcher.core.transition.LaunchSourceBounds
 
 /**
  * Resolves the Compose clipping [Shape] corresponding to a built-in [IconStyle].
@@ -73,13 +77,15 @@ fun resolveIconShape(iconStyle: IconStyle): Shape {
 fun AppListItem(
     app: AppItem,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit,
+    onClick: () -> Unit = {},
+    onClickWithBounds: ((LaunchSourceBounds?) -> Unit)? = null,
     onLongClick: () -> Unit
 ) {
     val visuals = LocalLauncherVisuals.current
     val iconAppearance = LocalIconAppearance.current
     val iconShape = remember(iconAppearance.iconStyle) { resolveIconShape(iconAppearance.iconStyle) }
     val applyFrameChrome = iconAppearance.iconPackPackage == null && iconAppearance.iconStyle != IconStyle.ADAPTIVE
+    val iconBoundsRef = remember(app.key) { LaunchBoundsRef() }
 
     Row(
         modifier = modifier
@@ -87,7 +93,13 @@ fun AppListItem(
             .padding(horizontal = 10.dp, vertical = 1.dp)
             .clip(IosSubtleTileShape)
             .combinedClickable(
-                onClick = onClick,
+                onClick = {
+                    if (onClickWithBounds != null) {
+                        onClickWithBounds(iconBoundsRef.bounds)
+                    } else {
+                        onClick()
+                    }
+                },
                 onLongClick = onLongClick
             )
             .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -95,6 +107,15 @@ fun AppListItem(
     ) {
         val iconModifier = Modifier
             .size(40.dp)
+            .onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                iconBoundsRef.bounds = LaunchSourceBounds.fromCoordinates(
+                    x = pos.x,
+                    y = pos.y,
+                    width = coords.size.width.toFloat(),
+                    height = coords.size.height.toFloat()
+                )
+            }
             .then(
                 if (applyFrameChrome) {
                     Modifier

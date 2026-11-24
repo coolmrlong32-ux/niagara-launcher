@@ -52,6 +52,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.niagara.launcher.core.model.AppItem
+import com.niagara.launcher.core.transition.LaunchSourceBounds
 import com.niagara.launcher.ui.home.components.AppListItem
 
 /**
@@ -66,7 +67,7 @@ fun SearchOverlay(
     hiddenResults: List<AppItem> = emptyList(),
     onQueryChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onAppClick: (AppItem) -> Unit,
+    onAppClick: (AppItem, LaunchSourceBounds?) -> Unit,
     onAppLongClick: (AppItem) -> Unit
 ) {
     val context = LocalContext.current
@@ -138,7 +139,7 @@ fun SearchOverlay(
                         keyboardActions = KeyboardActions(onSearch = {
                             val topHit = results.firstOrNull() ?: hiddenResults.firstOrNull()
                             if (topHit != null) {
-                                onAppClick(topHit)
+                                onAppClick(topHit, null)
                             } else if (query.isNotBlank()) {
                                 launchWebSearch(context, query)
                             }
@@ -171,9 +172,9 @@ fun SearchOverlay(
                     items(items = results, key = { it.key }) { app ->
                         AppListItem(
                             app = app,
-                            onClick = {
+                            onClickWithBounds = { bounds ->
                                 keyboardController?.hide()
-                                onAppClick(app)
+                                onAppClick(app, bounds)
                             },
                             onLongClick = { onAppLongClick(app) }
                         )
@@ -185,9 +186,9 @@ fun SearchOverlay(
                             Box(modifier = Modifier.alpha(0.68f)) {
                                 AppListItem(
                                     app = app,
-                                    onClick = {
+                                    onClickWithBounds = { bounds ->
                                         keyboardController?.hide()
-                                        onAppClick(app)
+                                        onAppClick(app, bounds)
                                     },
                                     onLongClick = { onAppLongClick(app) }
                                 )

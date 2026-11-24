@@ -19,6 +19,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,6 +66,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +100,8 @@ import com.niagara.launcher.core.theme.IosRemoveBadgeBg
 import com.niagara.launcher.core.theme.IosRemoveBadgeIcon
 import com.niagara.launcher.core.theme.IosRoundedCardSquircleShape
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
+import com.niagara.launcher.core.transition.LaunchBoundsRef
+import com.niagara.launcher.core.transition.LaunchSourceBounds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -223,7 +228,7 @@ fun IosAppIconTile(
     app: AppItem,
     index: Int,
     isEditMode: Boolean,
-    onClick: () -> Unit,
+    onClick: (LaunchSourceBounds?) -> Unit,
     onLongClick: (() -> Unit)?,
     onRemoveClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -237,11 +242,18 @@ fun IosAppIconTile(
     val haptic = LocalHapticFeedback.current
     val iconShape = remember(iconAppearance.iconStyle) { resolveIconShape(iconAppearance.iconStyle) }
     val applyFrameChrome = iconAppearance.iconPackPackage == null && iconAppearance.iconStyle != IconStyle.ADAPTIVE
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val iconBoundsRef = remember(app.key) { LaunchBoundsRef() }
 
-    val dragScale by animateFloatAsState(
-        targetValue = if (isDragged) 1.12f else 1f,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMedium),
-        label = "dragScale_${app.key}"
+    val tileScale by animateFloatAsState(
+        targetValue = when {
+            isDragged -> 1.12f
+            isPressed && !isEditMode -> 0.94f
+            else -> 1f
+        },
+        animationSpec = spring(dampingRatio = 0.74f, stiffness = Spring.StiffnessMedium),
+        label = "tileScale_${app.key}"
     )
     val iconShadowDp by animateDpAsState(
         targetValue = if (isDragged) 18.dp else 7.dp,
@@ -282,11 +294,11 @@ fun IosAppIconTile(
 
     val clickModifier = if (onLongClick != null) {
         Modifier.combinedClickable(
-            interactionSource = remember { MutableInteractionSource() },
+            interactionSource = interactionSource,
             indication = null,
             onClick = {
                 if (!isEditMode && !isDragged) {
-                    onClick()
+                    onClick(iconBoundsRef.bounds)
                 }
             },
             onLongClick = {
@@ -296,10 +308,10 @@ fun IosAppIconTile(
         )
     } else {
         Modifier.clickable(
-            interactionSource = remember { MutableInteractionSource() },
+            interactionSource = interactionSource,
             indication = null,
             enabled = !isEditMode && !isDragged,
-            onClick = onClick
+            onClick = { onClick(iconBoundsRef.bounds) }
         )
     }
 
@@ -309,8 +321,8 @@ fun IosAppIconTile(
             .graphicsLayer {
                 rotationZ = jiggleAngle
                 translationY = jiggleOffsetY
-                scaleX = dragScale
-                scaleY = dragScale
+                scaleX = tileScale
+                scaleY = tileScale
                 alpha = if (isDragged) 0.96f else 1f
             }
             .then(clickModifier)
@@ -332,6 +344,15 @@ fun IosAppIconTile(
             ) {
                 val iconModifier = Modifier
                     .size(effectiveIconDp)
+                    .onGloballyPositioned { coords ->
+                        val pos = coords.positionInRoot()
+                        iconBoundsRef.bounds = LaunchSourceBounds.fromCoordinates(
+                            x = pos.x,
+                            y = pos.y,
+                            width = coords.size.width.toFloat(),
+                            height = coords.size.height.toFloat()
+                        )
+                    }
                     .then(
                         if (applyFrameChrome) {
                             Modifier
@@ -536,7 +557,7 @@ fun ReorderableIosAppGrid(
     iconSizeDp: Float,
     showAppLabels: Boolean,
     iconAppearance: IconAppearance,
-    onLaunchApp: (AppItem) -> Unit,
+    onLaunchApp: (AppItem, LaunchSourceBounds?) -> Unit,
     onEnterEditMode: () -> Unit,
     onRemoveApp: (AppItem) -> Unit,
     onAddSlotClick: () -> Unit,
@@ -835,7 +856,7 @@ fun ReorderableIosAppGrid(
                             index = index,
                             isEditMode = isEditMode,
                             isDragged = isDragged,
-                            onClick = { onLaunchApp(app) },
+                            onClick = { bounds -> onLaunchApp(app, bounds) },
                             onLongClick = null,
                             onRemoveClick = { onRemoveApp(app) },
                             iconSizeDp = iconSizeDp,
@@ -886,7 +907,7 @@ fun ReorderableIosAppGrid(
 fun IosFavoritesCard(
     favorites: List<AppItem>,
     isEditMode: Boolean,
-    onLaunchApp: (AppItem) -> Unit,
+    onLaunchApp: (AppItem, LaunchSourceBounds?) -> Unit,
     onEnterEditMode: () -> Unit,
     onRemoveFavorite: (AppItem) -> Unit,
     onOpenFavoritesPicker: () -> Unit,
@@ -1026,7 +1047,7 @@ fun IosFavoritesCard(
 fun IosDesktopGrid(
     desktopApps: List<AppItem>,
     isEditMode: Boolean,
-    onLaunchApp: (AppItem) -> Unit,
+    onLaunchApp: (AppItem, LaunchSourceBounds?) -> Unit,
     onEnterEditMode: () -> Unit,
     onOpenDesktopMenu: () -> Unit,
     onRemoveDesktopApp: (AppItem) -> Unit,

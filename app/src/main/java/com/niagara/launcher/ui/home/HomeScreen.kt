@@ -2,6 +2,10 @@ package com.niagara.launcher.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -46,11 +50,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.niagara.launcher.core.data.LocalIconAppearance
+import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
+import com.niagara.launcher.core.transition.LaunchSourceBounds
 import com.niagara.launcher.ui.home.components.AlphabetWaveBar
 import com.niagara.launcher.ui.home.components.AppActionBottomSheet
 import com.niagara.launcher.ui.home.components.AppListItem
@@ -74,16 +83,55 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    returnToHomePulse: Int = 0,
+    onExternalAppLaunched: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val visuals = LocalLauncherVisuals.current
+    val hostView = LocalView.current
+    val density = LocalDensity.current
     val listState = rememberLazyListState()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var leftEdgeFocusedLetter by remember { mutableStateOf<Char?>(null) }
     var isHomeIconDragging by remember { mutableStateOf(false) }
+
+    // Restrained, non-blocking spring settle when returning from another app to the launcher
+    val returnScale = remember { Animatable(1f) }
+    val returnAlpha = remember { Animatable(1f) }
+    val returnOffsetY = remember { Animatable(0f) }
+
+    LaunchedEffect(returnToHomePulse) {
+        if (returnToHomePulse > 0) {
+            val startOffsetPx = with(density) { 10.dp.toPx() }
+            returnScale.snapTo(0.955f)
+            returnAlpha.snapTo(0.80f)
+            returnOffsetY.snapTo(startOffsetPx)
+
+            val settleSpring = spring<Float>(dampingRatio = 0.84f, stiffness = 420f)
+            launch { returnScale.animateTo(1f, settleSpring) }
+            launch { returnOffsetY.animateTo(0f, settleSpring) }
+            launch {
+                returnAlpha.animateTo(
+                    1f,
+                    tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
+
+    val launchWithTransition: (AppItem, LaunchSourceBounds?) -> Unit = { app, bounds ->
+        val launched = viewModel.launchApp(
+            app = app,
+            anchorView = hostView,
+            sourceBounds = bounds
+        )
+        if (launched) {
+            onExternalAppLaunched()
+        }
+    }
 
     // Exit desktop edit mode automatically when swiping away from page 0
     LaunchedEffect(pagerState.currentPage) {
@@ -186,156 +234,171 @@ fun HomeScreen(
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             } else {
-                HorizontalPager(
-                    state = pagerState,
-                    userScrollEnabled = !uiState.isSearching &&
-                        !uiState.isDesktopSettingsVisible &&
-                        !uiState.isIconPickerVisible &&
-                        !isHomeIconDragging,
-                    modifier = Modifier.fillMaxSize()
-                ) { page ->
-                    when (page) {
-                        0 -> {
-                            IosHomePage(
-                                favorites = uiState.favorites,
-                                desktopApps = uiState.desktopApps,
-                                isEditMode = uiState.isHomeEditMode,
-                                preferences = uiState.preferences,
-                                onLaunchApp = { viewModel.launchApp(it) },
-                                onEnterEditMode = { viewModel.setHomeEditMode(true) },
-                                onExitEditMode = { viewModel.setHomeEditMode(false) },
-                                onOpenDesktopMenu = { viewModel.openDesktopMenu() },
-                                onOpenDesktopSettings = { viewModel.openDesktopSettings() },
-                                onRemoveFavorite = { viewModel.removeFavorite(it) },
-                                onRemoveDesktopApp = { viewModel.removeDesktopApp(it) },
-                                onReorderFavorites = { viewModel.reorderFavorites(it) },
-                                onReorderDesktopApps = { viewModel.reorderDesktopApps(it) },
-                                onDraggingChanged = { isHomeIconDragging = it },
-                                onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
-                                onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
-                                onSearchClick = { viewModel.setSearching(true) }
-                            )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = returnScale.value
+                            scaleY = returnScale.value
+                            alpha = returnAlpha.value
+                            translationY = returnOffsetY.value
                         }
+                ) {
+                    HorizontalPager(
+                        state = pagerState,
+                        userScrollEnabled = !uiState.isSearching &&
+                            !uiState.isDesktopSettingsVisible &&
+                            !uiState.isIconPickerVisible &&
+                            !isHomeIconDragging,
+                        modifier = Modifier.fillMaxSize()
+                    ) { page ->
+                        when (page) {
+                            0 -> {
+                                IosHomePage(
+                                    favorites = uiState.favorites,
+                                    desktopApps = uiState.desktopApps,
+                                    isEditMode = uiState.isHomeEditMode,
+                                    preferences = uiState.preferences,
+                                    onLaunchApp = { app, bounds -> launchWithTransition(app, bounds) },
+                                    onEnterEditMode = { viewModel.setHomeEditMode(true) },
+                                    onExitEditMode = { viewModel.setHomeEditMode(false) },
+                                    onOpenDesktopMenu = { viewModel.openDesktopMenu() },
+                                    onOpenDesktopSettings = { viewModel.openDesktopSettings() },
+                                    onRemoveFavorite = { viewModel.removeFavorite(it) },
+                                    onRemoveDesktopApp = { viewModel.removeDesktopApp(it) },
+                                    onReorderFavorites = { viewModel.reorderFavorites(it) },
+                                    onReorderDesktopApps = { viewModel.reorderDesktopApps(it) },
+                                    onDraggingChanged = { isHomeIconDragging = it },
+                                    onOpenFavoritesPicker = { viewModel.openAppPicker(AppPickerMode.FAVORITES) },
+                                    onOpenDesktopPicker = { viewModel.openAppPicker(AppPickerMode.DESKTOP) },
+                                    onSearchClick = { viewModel.setSearching(true) }
+                                )
+                            }
 
-                        else -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .statusBarsPadding()
-                                    .navigationBarsPadding()
-                            ) {
-                                // Single-source-of-truth LazyColumn with end clearance for the visible right bar
-                                LazyColumn(
-                                    state = listState,
+                            else -> {
+                                Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(end = 30.dp)
+                                        .statusBarsPadding()
+                                        .navigationBarsPadding()
                                 ) {
-                                    items(
-                                        items = uiState.listEntries,
-                                        key = { it.listKey },
-                                        contentType = { entry ->
+                                    // Single-source-of-truth LazyColumn with end clearance for the visible right bar
+                                    LazyColumn(
+                                        state = listState,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(end = 30.dp)
+                                    ) {
+                                        items(
+                                            items = uiState.listEntries,
+                                            key = { it.listKey },
+                                            contentType = { entry ->
+                                                when (entry) {
+                                                    HomeListEntry.Glance -> "glance"
+                                                    HomeListEntry.FavoritesHeader -> "fav_header"
+                                                    is HomeListEntry.FavoriteApp -> "app_item"
+                                                    HomeListEntry.FavoritesDivider -> "divider"
+                                                    is HomeListEntry.LetterHeader -> "letter_header"
+                                                    is HomeListEntry.DrawerApp -> "app_item"
+                                                    HomeListEntry.BottomSpacer -> "spacer"
+                                                }
+                                            }
+                                        ) { entry ->
                                             when (entry) {
-                                                HomeListEntry.Glance -> "glance"
-                                                HomeListEntry.FavoritesHeader -> "fav_header"
-                                                is HomeListEntry.FavoriteApp -> "app_item"
-                                                HomeListEntry.FavoritesDivider -> "divider"
-                                                is HomeListEntry.LetterHeader -> "letter_header"
-                                                is HomeListEntry.DrawerApp -> "app_item"
-                                                HomeListEntry.BottomSpacer -> "spacer"
-                                            }
-                                        }
-                                    ) { entry ->
-                                        when (entry) {
-                                            HomeListEntry.Glance -> {
-                                                GlanceWidget(
-                                                    showBattery = uiState.preferences.showBatteryInGlance,
-                                                    onSearchClick = { viewModel.setSearching(true) },
-                                                    onSettingsClick = { viewModel.openSettings() }
-                                                )
-                                            }
+                                                HomeListEntry.Glance -> {
+                                                    GlanceWidget(
+                                                        showBattery = uiState.preferences.showBatteryInGlance,
+                                                        onSearchClick = { viewModel.setSearching(true) },
+                                                        onSettingsClick = { viewModel.openSettings() }
+                                                    )
+                                                }
 
-                                            HomeListEntry.FavoritesHeader -> {
-                                                DrawerSectionHeader(
-                                                    title = "常用",
-                                                    accentColor = visuals.textSecondary
-                                                )
-                                            }
+                                                HomeListEntry.FavoritesHeader -> {
+                                                    DrawerSectionHeader(
+                                                        title = "常用",
+                                                        accentColor = visuals.textSecondary
+                                                    )
+                                                }
 
-                                            is HomeListEntry.FavoriteApp -> {
-                                                AppListItem(
-                                                    app = entry.app,
-                                                    onClick = { viewModel.launchApp(entry.app) },
-                                                    onLongClick = { viewModel.openAppMenu(entry.app) }
-                                                )
-                                            }
+                                                is HomeListEntry.FavoriteApp -> {
+                                                    AppListItem(
+                                                        app = entry.app,
+                                                        onClickWithBounds = { bounds ->
+                                                            launchWithTransition(entry.app, bounds)
+                                                        },
+                                                        onLongClick = { viewModel.openAppMenu(entry.app) }
+                                                    )
+                                                }
 
-                                            HomeListEntry.FavoritesDivider -> {
-                                                Spacer(modifier = Modifier.height(14.dp))
-                                            }
+                                                HomeListEntry.FavoritesDivider -> {
+                                                    Spacer(modifier = Modifier.height(14.dp))
+                                                }
 
-                                            is HomeListEntry.LetterHeader -> {
-                                                DrawerSectionHeader(
-                                                    title = entry.letter.toString(),
-                                                    accentColor = visuals.accent
-                                                )
-                                            }
+                                                is HomeListEntry.LetterHeader -> {
+                                                    DrawerSectionHeader(
+                                                        title = entry.letter.toString(),
+                                                        accentColor = visuals.accent
+                                                    )
+                                                }
 
-                                            is HomeListEntry.DrawerApp -> {
-                                                AppListItem(
-                                                    app = entry.app,
-                                                    onClick = { viewModel.launchApp(entry.app) },
-                                                    onLongClick = { viewModel.openAppMenu(entry.app) }
-                                                )
-                                            }
+                                                is HomeListEntry.DrawerApp -> {
+                                                    AppListItem(
+                                                        app = entry.app,
+                                                        onClickWithBounds = { bounds ->
+                                                            launchWithTransition(entry.app, bounds)
+                                                        },
+                                                        onLongClick = { viewModel.openAppMenu(entry.app) }
+                                                    )
+                                                }
 
-                                            HomeListEntry.BottomSpacer -> {
-                                                Spacer(modifier = Modifier.height(88.dp))
+                                                HomeListEntry.BottomSpacer -> {
+                                                    Spacer(modifier = Modifier.height(88.dp))
+                                                }
                                             }
                                         }
                                     }
-                                }
 
-                                // Left edge: completely invisible vertical alphabet scrubbing hotspot
-                                if (uiState.preferences.isRightHanded) {
-                                    InvisibleLeftAlphabetHotspot(
+                                    // Left edge: completely invisible vertical alphabet scrubbing hotspot
+                                    if (uiState.preferences.isRightHanded) {
+                                        InvisibleLeftAlphabetHotspot(
+                                            hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
+                                            onLetterSelected = onLetterSelected,
+                                            onFocusedLetterChanged = { leftEdgeFocusedLetter = it },
+                                            modifier = Modifier.align(Alignment.CenterStart)
+                                        )
+                                    }
+
+                                    // Right edge: sole visible compact one-handed alphabet wave bar
+                                    AlphabetWaveBar(
+                                        isRightHanded = true,
                                         hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
+                                        availableLetters = uiState.availableLetters,
+                                        activeLetter = activeSectionLetter,
+                                        externalFocusedLetter = leftEdgeFocusedLetter,
                                         onLetterSelected = onLetterSelected,
-                                        onFocusedLetterChanged = { leftEdgeFocusedLetter = it },
-                                        modifier = Modifier.align(Alignment.CenterStart)
+                                        modifier = Modifier.align(Alignment.CenterEnd)
                                     )
                                 }
-
-                                // Right edge: sole visible compact one-handed alphabet wave bar
-                                AlphabetWaveBar(
-                                    isRightHanded = true,
-                                    hapticFeedbackEnabled = uiState.preferences.hapticFeedbackEnabled,
-                                    availableLetters = uiState.availableLetters,
-                                    activeLetter = activeSectionLetter,
-                                    externalFocusedLetter = leftEdgeFocusedLetter,
-                                    onLetterSelected = onLetterSelected,
-                                    modifier = Modifier.align(Alignment.CenterEnd)
-                                )
                             }
                         }
                     }
-                }
 
-                // Bottom iOS-style Page Indicator (hidden while full-screen Search is open)
-                if (!uiState.isSearching) {
-                    IosPageIndicator(
-                        pageCount = 2,
-                        currentPage = pagerState.currentPage,
-                        onPageSelected = { targetPage ->
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(targetPage)
-                            }
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .navigationBarsPadding()
-                            .padding(bottom = 10.dp)
-                    )
+                    // Bottom iOS-style Page Indicator (hidden while full-screen Search is open)
+                    if (!uiState.isSearching) {
+                        IosPageIndicator(
+                            pageCount = 2,
+                            currentPage = pagerState.currentPage,
+                            onPageSelected = { targetPage ->
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(targetPage)
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                                .padding(bottom = 10.dp)
+                        )
+                    }
                 }
             }
 
@@ -356,9 +419,9 @@ fun HomeScreen(
                 hiddenResults = uiState.hiddenSearchResults,
                 onQueryChange = { viewModel.onSearchQueryChanged(it) },
                 onDismiss = { viewModel.setSearching(false) },
-                onAppClick = { app ->
+                onAppClick = { app, bounds ->
                     viewModel.setSearching(false)
-                    viewModel.launchApp(app)
+                    launchWithTransition(app, bounds)
                 },
                 onAppLongClick = { app ->
                     viewModel.openAppMenu(app)

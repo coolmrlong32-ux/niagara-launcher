@@ -1,5 +1,6 @@
 package com.niagara.launcher.core.data
 
+import android.app.ActivityOptions
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -7,11 +8,14 @@ import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.net.Uri
+import android.os.Bundle
 import android.os.UserHandle
 import android.provider.Settings
+import android.view.View
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.IconPackInfo
 import com.niagara.launcher.core.pinyin.PinyinEngine
+import com.niagara.launcher.core.transition.LaunchSourceBounds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -232,9 +236,16 @@ class AppRepository(private val context: Context) {
     }
 
     /**
-     * Launches the target application safely.
+     * Launches the target application safely with an optional icon-anchored reveal/scale transition.
      */
-    fun launchApp(app: AppItem): Boolean {
+    fun launchApp(
+        app: AppItem,
+        anchorView: View? = null,
+        sourceBounds: LaunchSourceBounds? = null
+    ): Boolean {
+        val launchContext = anchorView?.context ?: context
+        val optionsBundle = buildLaunchOptionsBundle(anchorView, sourceBounds)
+
         return try {
             val componentName = ComponentName(app.packageName, app.activityName)
             val launchIntent = Intent(Intent.ACTION_MAIN).apply {
@@ -242,20 +253,78 @@ class AppRepository(private val context: Context) {
                 component = componentName
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
             }
-            context.startActivity(launchIntent)
+            startActivitySafely(launchContext, launchIntent, optionsBundle)
             true
         } catch (_: Exception) {
             try {
                 val fallbackIntent = packageManager.getLaunchIntentForPackage(app.packageName)
                 if (fallbackIntent != null) {
                     fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(fallbackIntent)
+                    startActivitySafely(launchContext, fallbackIntent, optionsBundle)
                     true
                 } else {
                     false
                 }
             } catch (_: Exception) {
                 false
+            }
+        }
+    }
+
+    private fun startActivitySafely(launchContext: Context, intent: Intent, optionsBundle: Bundle?) {
+        if (optionsBundle != null) {
+            try {
+                launchContext.startActivity(intent, optionsBundle)
+                return
+            } catch (_: Exception) {
+                // Fall back to standard launch if OEM rejects custom ActivityOptions
+            }
+        }
+        launchContext.startActivity(intent)
+    }
+
+    private fun buildLaunchOptionsBundle(
+        anchorView: View?,
+        sourceBounds: LaunchSourceBounds?
+    ): Bundle? {
+        if (anchorView == null || anchorView.width <= 0 || anchorView.height <= 0) return null
+        val clamped = sourceBounds?.toClampedRelativeBounds(anchorView.width, anchorView.height)
+
+        return try {
+            if (clamped != null) {
+                ActivityOptions.makeClipRevealAnimation(
+                    anchorView,
+                    clamped.left,
+                    clamped.top,
+                    clamped.width,
+                    clamped.height
+                ).toBundle()
+            } else {
+                ActivityOptions.makeScaleUpAnimation(
+                    anchorView,
+                    anchorView.width / 2,
+                    anchorView.height / 2,
+                    0,
+                    0
+                ).toBundle()
+            }
+        } catch (_: Exception) {
+            try {
+                val fallback = clamped ?: LaunchSourceBounds(
+                    left = anchorView.width / 2,
+                    top = anchorView.height / 2,
+                    width = 1,
+                    height = 1
+                )
+                ActivityOptions.makeScaleUpAnimation(
+                    anchorView,
+                    fallback.left,
+                    fallback.top,
+                    fallback.width,
+                    fallback.height
+                ).toBundle()
+            } catch (_: Exception) {
+                null
             }
         }
     }

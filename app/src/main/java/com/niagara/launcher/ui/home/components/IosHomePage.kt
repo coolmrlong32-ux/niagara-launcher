@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.niagara.launcher.core.model.AppItem
 import com.niagara.launcher.core.model.LauncherPreferences
 import com.niagara.launcher.core.theme.LocalLauncherVisuals
+import com.niagara.launcher.core.transition.LaunchSourceBounds
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -74,7 +75,7 @@ fun IosHomePage(
     desktopApps: List<AppItem>,
     isEditMode: Boolean,
     preferences: LauncherPreferences,
-    onLaunchApp: (AppItem) -> Unit,
+    onLaunchApp: (AppItem, LaunchSourceBounds?) -> Unit,
     onEnterEditMode: () -> Unit,
     onExitEditMode: () -> Unit,
     onOpenDesktopMenu: () -> Unit,
